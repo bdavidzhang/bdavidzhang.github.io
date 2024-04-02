@@ -67,6 +67,10 @@ tocopen = false
     [[params.profileMode.buttons]]
     name = "Tags"
     url = "tags"
+    
+    [[params.profileMode.buttons]]
+    name = "Categories"
+    url = "categories"
 
   [params.homeInfoParams]
   Title = "David Zhang 👋"

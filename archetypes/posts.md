@@ -1,11 +1,11 @@
-
 ---
-title: "My 1st post"
-date: 2020-09-15T11:30:03+00:00
+title : {{ replace .File.ContentBaseName "-" " " | title }}
+date : {{ .Date }}
 # weight: 1
 # aliases: ["/first"]
-tags: ["first"]
-author: "Me"
+tags: []
+category: []
+author: "David Zhang"
 # author: ["Me", "You"] # multiple authors
 showToc: true
 TocOpen: false

@@ -120,13 +120,13 @@ SiteVerificationTag = "XYZabc"
 [[menu.main]]
 identifier = "categories"
 name = "categories"
-url = "./categories/"
+url = "https://bdavidzhang.github.io/categories"
 weight = 10
 
 [[menu.main]]
 identifier = "tags"
 name = "tags"
-url = "./tags/"
+url = "tags"
 weight = 20
 
 [[menu.main]]
@@ -137,7 +137,3 @@ weight = 30
 
 [markup.highlight]
 noClasses = false
-
-[permalinks]
-  categories = "/categories/:slug/"
-  tags = "/tags/:slug/"

@@ -11,8 +11,22 @@
     </image>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
-    <lastBuildDate>Mon, 01 Apr 2024 18:20:24 -0500</lastBuildDate>
+    <lastBuildDate>Wed, 10 Apr 2024 18:10:09 -0500</lastBuildDate>
     <atom:link href="http://localhost:1313/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Intro</title>
+      <link>http://localhost:1313/tags/intro/</link>
+      <pubDate>Wed, 10 Apr 2024 18:10:09 -0500</pubDate>
+      <guid>http://localhost:1313/tags/intro/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Story</title>
+      <link>http://localhost:1313/tags/story/</link>
+      <pubDate>Wed, 10 Apr 2024 18:10:09 -0500</pubDate>
+      <guid>http://localhost:1313/tags/story/</guid>
+      <description></description>
+    </item>
     <item>
       <title>Abstract</title>
       <link>http://localhost:1313/tags/abstract/</link>
@@ -32,13 +46,6 @@
       <link>http://localhost:1313/tags/math/</link>
       <pubDate>Mon, 01 Apr 2024 18:20:24 -0500</pubDate>
       <guid>http://localhost:1313/tags/math/</guid>
-      <description></description>
-    </item>
-    <item>
-      <title>Story</title>
-      <link>http://localhost:1313/tags/story/</link>
-      <pubDate>Mon, 01 Apr 2024 11:40:35 -0500</pubDate>
-      <guid>http://localhost:1313/tags/story/</guid>
       <description></description>
     </item>
   </channel>

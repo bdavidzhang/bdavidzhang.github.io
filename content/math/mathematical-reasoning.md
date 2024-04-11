@@ -85,4 +85,10 @@ Question: is the following statement a statement--
 
 "This statement is false."
 
+Open sentences can be converted into statements through the addition of *qualifiers*. "x is even" is not a statement, but "For all integers x divisible by 2, x is even" is a statement. "For all" is called a *universal qualifier*. Or, one can say, "There exists an integer x such that x is even". "There exits ... such that" is a *conditional qualifier*.
+
+## Negations and conjunctions  
+Of course, we can flip a statement around by negating it. The simplest way is by adding "not" infront of every statement. "Not all cars are red", "Not all people are men"... In our two previous examples, we are actually negating universal qualifiers. Another way to say those two sentences was that "There exists a car that is not red", and "There exists a person that is not a man." The negation of a universal qualifier is a conditional qualification of the negated open sentence. 
+
+We can also combine statements using "or", or "and". For statements $p$, $q$. 
 

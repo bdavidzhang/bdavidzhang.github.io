@@ -11,8 +11,15 @@
     </image>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
-    <lastBuildDate>Mon, 01 Apr 2024 18:20:24 -0500</lastBuildDate>
+    <lastBuildDate>Wed, 10 Apr 2024 18:10:09 -0500</lastBuildDate>
     <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Intro</title>
+      <link>http://localhost:1313/posts/intro/</link>
+      <pubDate>Wed, 10 Apr 2024 18:10:09 -0500</pubDate>
+      <guid>http://localhost:1313/posts/intro/</guid>
+      <description>Desc Text.</description>
+    </item>
     <item>
       <title>Mathematical Reasoning</title>
       <link>http://localhost:1313/math/mathematical-reasoning/</link>

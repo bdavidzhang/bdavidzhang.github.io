@@ -1,2 +1,2 @@
 Personal website
-where I post prose and poetry
+where I post podcasts, prose and poetry

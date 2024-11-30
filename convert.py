@@ -58,6 +58,7 @@ def convert_markdown_to_json(input_file, output_file='essay.json'):
     
     # Convert markdown to HTML
     html_body = markdown.markdown(markdown_content)
+    html_body = html_body.replace("\n","<br>")
     
     # Create the JSON structure
     json_data = {
@@ -92,9 +93,13 @@ def convert_markdown_to_json(input_file, output_file='essay.json'):
     return json_data
 
 def main():
-    markdown_files = [
-        "essays/essay1.md",
-    ]
+    
+    path_to_essay = input()
+    path_to_essay = "essays/"+path_to_essay
+
+    markdown_files = []
+    markdown_files.append(path_to_essay)
+    
     
     for markdown_file in markdown_files:
         try:

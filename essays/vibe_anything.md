@@ -1,6 +1,7 @@
 ---
 title: How to Vibe Anything (Inspired by Vibe Coding)
 date: March 21, 2025
+tags: AI
 ---
 
 This article embodies what I call "vibe writing". I fed an outline for this article into Claude Sonnet 3.7 and it wrote all paragraphs other than this one. I then went through the paragraphs and applied my style. Claude produces quality writing, but some human touch brings *eloquence*.

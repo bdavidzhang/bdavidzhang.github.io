@@ -3,12 +3,11 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <!--Complete the metadata-->
-
+        <meta name="description" content="David Zhang's Writing and Essays">
+        <title>David Zhang - Writing</title>
         <link rel="stylesheet" href="inter.css">
         <link rel="stylesheet" href="newmin.css">
     </head>
-
     <body>
         <header>
             <h1>David Zhang</h1>
@@ -18,12 +17,16 @@
                 <a href="writing.html">Writing</a> 
             </nav>
         </header>
-
         <div class="main">
+            <div class="tag-filter">
+                <span>Filter by tag: </span>
+                <select id="tagSelector">
+                    <option value="all">All Essays</option>
+                    <!-- Tags will be dynamically loaded here -->
+                </select>
+            </div>
             <div class="essays"></div>
         </div>
         <script src="loadEssays.js"></script>
-
-                
     </body>
 </html>

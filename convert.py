@@ -56,6 +56,14 @@ def convert_markdown_to_json(input_file, output_file='essay.json'):
     # Get date (use current date if not specified in frontmatter)
     date = frontmatter.get('date', datetime.now().strftime("%B %d, %Y"))
     
+    # Get tags from frontmatter (default to empty list if not specified)
+    tags_str = frontmatter.get('tags', '')
+    # Parse tags - either comma-separated or space-separated depending on format
+    if ',' in tags_str:
+        tags = [tag.strip() for tag in tags_str.split(',')]
+    else:
+        tags = [tag.strip() for tag in tags_str.split()]
+    
     # Convert markdown to HTML
     html_body = markdown.markdown(markdown_content)
     html_body = html_body.replace("\n","<br>")
@@ -65,6 +73,7 @@ def convert_markdown_to_json(input_file, output_file='essay.json'):
         "title": title,
         "slug": slug,
         "date": date,
+        "tags": tags,
         "body": html_body
     }
     
@@ -79,27 +88,28 @@ def convert_markdown_to_json(input_file, output_file='essay.json'):
     existing_essay = next((essay for essay in essays if essay['slug'] == slug), None)
     
     if existing_essay:
-        print(f"An essay with slug '{slug}' already exists. Skipping.")
-        return None
-    
-    # Append new essay
-    essays.append(json_data)
+        print(f"An essay with slug '{slug}' already exists. Updating it.")
+        # Update the existing essay instead of skipping
+        for i, essay in enumerate(essays):
+            if essay['slug'] == slug:
+                essays[i] = json_data
+                break
+    else:
+        # Append new essay
+        essays.append(json_data)
     
     # Write updated essays back to file
     with open(output_file, 'w', encoding='utf-8') as file:
         json.dump(essays, file, indent=2)
     
-    print(f"Added essay '{title}' to {output_file}")
+    print(f"Added/updated essay '{title}' to {output_file}")
     return json_data
 
 def main():
-    
     path_to_essay = input()
     path_to_essay = "essays/"+path_to_essay
-
     markdown_files = []
     markdown_files.append(path_to_essay)
-    
     
     for markdown_file in markdown_files:
         try:

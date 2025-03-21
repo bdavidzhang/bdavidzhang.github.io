@@ -1,6 +1,7 @@
 ---
 title: Chain of Thought (CoT) Resources
 date: March 13, 2025
+tags: AI, RL
 ---
 # CoT learning resources
 ## DeepSeek R1 Series

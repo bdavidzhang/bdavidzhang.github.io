@@ -1,6 +1,7 @@
 ---
 title: Symphony: The Prudent
 date: November 29, 2024
+tags: poetry
 ---
 Prelude 
 The red dragonfly, dancing in the dusk 

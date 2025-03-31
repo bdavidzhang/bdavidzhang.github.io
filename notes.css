@@ -1,0 +1,88 @@
+/* === notes_style.css === */
+
+.note-entry {
+    border: 1px solid #dcdcdc; /* Light grey border */
+    border-radius: 6px;       /* Rounded corners */
+    margin-bottom: 1.5em;     /* Space between note entries */
+    background-color: #f9f9f9; /* Slightly off-white background */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Subtle shadow */
+    overflow: hidden; /* Keeps contents inside rounded borders */
+}
+
+.note-header {
+    padding: 0.8em 1.2em;       /* Padding inside the header */
+    border-bottom: 1px solid #eee; /* Separator line */
+    background-color: #f0f0f0; /* Slightly darker header background */
+}
+
+.note-header h3 {
+    margin: 0 0 0.2em 0; /* Adjust spacing around the title */
+    font-size: 1.2em;    /* Make title slightly larger */
+}
+
+.note-meta {
+    font-size: 0.85em;  /* Smaller text for metadata */
+    color: #555;       /* Grey color for metadata */
+    margin-top: 0.3em;
+}
+
+.note-meta span {
+    margin-right: 0.5em; /* Add a little space after each metadata item */
+}
+
+.note-links {
+    padding: 0.8em 1.2em; /* Padding around the links section */
+}
+
+.note-links ul {
+    list-style: none; /* Remove default bullet points */
+    padding: 0;
+    margin: 0;
+}
+
+.note-links li {
+    margin-bottom: 0.8em; /* Space between links */
+}
+/* Remove the last link's margin */
+.note-links li:last-child { 
+    margin-bottom: 0;
+} 
+
+.note-links a {
+    display: block; /* Make the whole area clickable */
+    text-decoration: none; /* Remove underline */
+    color: #333;       /* Dark text color for links */
+    padding: 0.6em;     /* Padding inside the link area */
+    border-radius: 4px; /* Slightly rounded corners for the link */
+    transition: background-color 0.2s ease; /* Smooth hover effect */
+}
+
+.note-links a:hover {
+    background-color: #e9e9e9; /* Background color on hover */
+    color: #000; /* Darken text slightly on hover */
+}
+
+.note-links .link-title {
+    font-weight: 600; /* Bold title for the link */
+    display: block; /* Put title on its own line */
+    margin-bottom: 0.2em;
+    color: #1a1a1a; /* Slightly darker title color */
+}
+
+.note-links .link-description {
+    font-size: 0.9em;  /* Slightly smaller text for description */
+    color: #444;       /* Grey text color for description */
+    line-height: 1.4;
+}
+
+/* Make sure the .main container has some padding if it doesn't already */
+.main {
+    padding: 1em; /* Adjust as needed */
+}
+
+/* Optional: Add a general heading style if you used one */
+.main h2 {
+    margin-bottom: 1em;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 0.3em;
+}

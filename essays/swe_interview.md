@@ -1,3 +1,13 @@
+
+---
+title: Future of Interviews (Inspired by Roy Lee)
+date: Mar 31, 2025
+tags: AI
+---
+
+
+
+
 # Future of Interviews (Inspired by Roy Lee)
 Coding interviews **suck** because they create **time-pressured environments** that reward **memorization over real-world engineering skills**, fail to **accurately assess a candidate's actual abilities** and  remains ***disconnected*** from actual software development.
 

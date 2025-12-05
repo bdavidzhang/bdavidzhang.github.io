@@ -206,3 +206,22 @@ body {
     background: var(--nc-bg-3);
     color: var(--nc-tx-1);
 }
+
+/* Dark Mode Adjustments */
+@media (prefers-color-scheme: dark) {
+    .contact-info {
+        color: #aaa;
+    }
+    
+    .section-header {
+        border-bottom-color: var(--nc-bg-3);
+    }
+    
+    .text-muted {
+        color: #aaa !important;
+    }
+}
+
+.text-muted {
+    color: #666;
+}

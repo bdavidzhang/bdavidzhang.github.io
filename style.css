@@ -1,0 +1,208 @@
+/* Custom styles for the main website */
+
+/* Increase overall page width to accommodate larger profile section */
+body {
+    max-width: 1200px;
+}
+
+.about-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 2rem;
+}
+
+.profile-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    flex-shrink: 0; /* Prevent shrinking */
+}
+
+.profile-image-container {
+    position: relative;
+    width: 380px;
+    height: 380px; /* Ensure container has height */
+    margin-bottom: 1.5rem;
+}
+
+.profile-image {
+    width: 380px;
+    height: auto;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.main-img {
+    opacity: 1;
+    z-index: 2;
+}
+
+.jedi-img {
+    opacity: 0;
+    z-index: 1;
+}
+
+.profile-image-container:hover .main-img,
+.profile-image-container.is-active .main-img {
+    opacity: 0;
+    transform: scale(1.02);
+}
+
+.profile-image-container:hover .jedi-img,
+.profile-image-container.is-active .jedi-img {
+    opacity: 1;
+    transform: scale(1.02);
+}
+
+.bio-section {
+    max-width: 800px;
+    text-align: center;
+}
+
+.bio-text {
+    font-size: 1.15rem;
+    line-height: 1.7;
+    margin-bottom: 1.5rem;
+    color: var(--nc-tx-2);
+}
+
+.contact-info {
+    margin-top: 1.5rem;
+    font-size: 0.95rem;
+    color: #666;
+}
+
+.email-text {
+    margin-bottom: 1rem;
+    font-family: var(--nc-font-mono);
+    background: var(--nc-bg-2);
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.social-links {
+    margin-top: 1.5rem;
+}
+
+.social-links a {
+    margin: 0 10px;
+    font-weight: 500;
+    text-decoration: none;
+    padding-bottom: 2px;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s ease;
+}
+
+.social-links a:hover {
+    border-bottom-color: currentColor;
+}
+
+/* Responsive adjustments */
+@media (min-width: 960px) {
+    .about-container {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 4rem;
+        text-align: left;
+    }
+
+    .bio-section {
+        text-align: left;
+        padding-top: 1rem;
+    }
+    
+    .profile-image {
+        margin-bottom: 0;
+    }
+}
+
+/* Publication Cards */
+.publication-card {
+    background: var(--nc-bg-1);
+    border: 1px solid var(--nc-bg-3);
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin-bottom: 1rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.publication-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    border-color: var(--nc-lk-1);
+}
+
+.pub-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.05rem;
+    color: var(--nc-tx-1);
+    line-height: 1.4;
+}
+
+.pub-meta {
+    font-size: 0.85rem;
+    color: var(--nc-tx-2);
+    margin-bottom: 0.8rem;
+    font-family: var(--nc-font-mono);
+}
+
+.pub-desc {
+    font-size: 0.95rem;
+    color: var(--nc-tx-2);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Section Headers */
+.section-header {
+    font-size: 1.2rem;
+    margin-bottom: 1.5rem;
+    margin-top: 2.5rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.5rem;
+    color: var(--nc-tx-1);
+    font-weight: 600;
+}
+
+/* Search and Expand Styles */
+.search-container {
+    margin-bottom: 2rem;
+}
+
+.search-input {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid var(--nc-bg-3);
+    border-radius: 8px;
+    font-size: 1rem;
+    background: var(--nc-bg-1);
+    color: var(--nc-tx-1);
+    box-sizing: border-box; /* Ensure padding doesn't affect width */
+}
+
+.show-more-btn {
+    display: block;
+    width: 100%;
+    padding: 0.8rem;
+    margin-top: 1rem;
+    background: var(--nc-bg-2);
+    border: none;
+    border-radius: 8px;
+    color: var(--nc-tx-2);
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s ease;
+    text-align: center;
+}
+
+.show-more-btn:hover {
+    background: var(--nc-bg-3);
+    color: var(--nc-tx-1);
+}

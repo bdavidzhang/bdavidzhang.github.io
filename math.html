@@ -3,72 +3,45 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta name="description" content="David Zhang's Writing and Essays">
-        <title>David Zhang - Writing</title>
+        <meta name="description" content="David Zhang's Math Notes">
+        <title>David Zhang - Math</title>
         <link rel="stylesheet" href="inter.css">
         <link rel="stylesheet" href="newmin.css">
-        <link rel="stylesheet" href="notes_style.css"> 
+        <link rel="stylesheet" href="notes.css"> 
     </head>
     <body>
         <header>
             <h1>David Zhang</h1>
             <nav>
-                <a href="about.html">About</a> /
+                <a href="index.html">About</a> /
                 <a href="podcast.html">Podcast</a> /
                 <a href="writing.html">Writing</a> /
                 <a href="math.html">Math</a> 
             </nav>
         </header>
         <div class="main">
-
-            <h2>My Math Notes</h2> <div class="note-entry">
-                <div class="note-header">
-                    <h3>Galois Theory</h3>
-                    <div class="note-meta">
-                        <span>Subject: Abstract Algebra</span> | <span>March 2025</span> 
-                    </div>
+            <h2>My Math Notes</h2>
+            
+            <div class="filter-section">
+                <div class="filter-group">
+                    <label for="subjectSelector">Filter by subject: </label>
+                    <select id="subjectSelector">
+                        <option value="all">All Subjects</option>
+                        <!-- Subjects will be dynamically loaded here -->
+                    </select>
                 </div>
-                <div class="note-links">
-                    <ul>
-                        <li>
-                            <a href="path/to/your/algebraic_topology_notes.pdf" target="_blank">
-                                <span class="link-title">Lecture Notes PDF</span>
-                                <div class="link-description">
-                                    (In)Complete notes covering Galois Theory
-                                </div>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="path/to/your/algebraic_topology_summary.pdf" target="_blank">
-                                <span class="link-title">Summary Sheet</span>
-                                <div class="link-description">
-                                    Quick reference guide to key theorems and definitions.
-                                </div>
-                            </a>
-                        </li>
-                    </ul>
+                
+                <div class="filter-group">
+                    <label for="tagSelector">Filter by tag: </label>
+                    <select id="tagSelector">
+                        <option value="all">All Tags</option>
+                        <!-- Tags will be dynamically loaded here -->
+                    </select>
                 </div>
             </div>
-            <!-- <div class="note-entry">
-                <div class="note-header">
-                    <h3>Differential Geometry Notes</h3>
-                     <div class="note-meta">
-                        <span>Subject: Geometry</span> | <span>Year: 2024</span> 
-                    </div>
-                </div>
-                <div class="note-links">
-                    <ul>
-                        <li>
-                            <a href="path/to/your/diff_geom_notes.pdf" target="_blank">
-                                <span class="link-title">Full Course Notes</span>
-                                <div class="link-description">
-                                    Notes on manifolds, vector fields, forms, and Stokes' theorem.
-                                </div>
-                            </a>
-                        </li>
-                         </ul>
-                </div>
-            </div> -->
-            </div>
+            
+            <div class="math-notes"></div>
+        </div>
+        <script src="loadMathNotes.js"></script>
     </body>
 </html>

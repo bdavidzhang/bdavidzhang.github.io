@@ -1,0 +1,27 @@
+[
+  {
+    "title": "Galois Theory",
+    "slug": "galois-theory",
+    "date": "March 15, 2025",
+    "subject": "Abstract Algebra",
+    "tags": ["algebra", "field-theory", "groups"],
+    "description": "Complete notes covering Galois Theory, fundamental theorem, and applications to polynomial solvability.",
+    "links": [
+      {
+        "title": "Lecture Notes PDF",
+        "url": "notes/galois_theory_notes.pdf",
+        "description": "Complete notes covering field extensions, Galois groups, and the fundamental theorem"
+      },
+      {
+        "title": "Summary Sheet",
+        "url": "notes/galois_summary.pdf", 
+        "description": "Quick reference guide to key theorems and definitions"
+      },
+      {
+        "title": "Problem Sets",
+        "url": "notes/galois_problems.pdf",
+        "description": "Worked solutions to challenging problems in Galois theory"
+      }
+    ]
+  }
+]

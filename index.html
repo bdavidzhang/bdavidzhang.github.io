@@ -1,30 +1,121 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>David Zhang</title>
-    <meta name="description" content="Becoming a modern human.">
-    <meta name="keywords" content="David Zhang, David, Zhang, UIUC, CS, math, physics, AI">
-    <meta property="og:title" content="David Zhang">
-    <meta property="og:description" content="Becoming a modern human.">
-    <meta property="og:url" content="https:bdavidzhang.com">
-    <meta property="og:type" content="website">
-    <!--<meta property="og:image" content="">-->
+    <meta name="description" content="Bocheng David Zhang - CS & Physics at UIUC">
     <link rel="stylesheet" href="inter.css">
     <link rel="stylesheet" href="newmin.css">
+    <link rel="stylesheet" href="style.css">
 </head>
-<body class="vsc-initialized">
+<body>
     <header>
-        <h1>David Zhang</h1>
+        <h1>David Zhang   张博诚</h1>
         <nav>
-            <a href="about.html">About</a> /
-            <a href="podcast.html">Podcast</a> /
-            <a href="writing.html">Writing</a> /
-            <a href="math.html">Math</a> 
+            <a href="#" style="font-weight: bold;">About</a> /
+            <a href="#podcast-section">Podcast</a> /
+            <a href="#writing-section">Writing</a> /
+            <a href="#math-section">Math</a> 
         </nav>
     </header>
 
+    <main class="about-container">
+        <div class="profile-section">
+            <div class="profile-image-container">
+            <img src="assets/me_circle.png" alt="David Zhang" class="profile-image main-img">
+            <img src="assets/me_jedi.png" alt="David Zhang Jedi" class="profile-image jedi-img">
+            </div>
+
+
+            <div class="contact-info">
+            <div class="email-text">
+                davidz10@illinois.edu
+            </div>
+            <div class="social-links">
+                <a href="assets/cv.pdf">CV</a> /
+                <a href="https://x.com/bdavidzhang">X</a> /
+                <a href="https://www.linkedin.com/in/bocheng-zhang7/">Linkedin</a> /
+                <a href="https://github.com/bdavidzhang">Github</a> /
+                <a href="https://www.instagram.com/david7hang/">Instagram</a> /
+                <a href="https://www.youtube.com/@bdavidzhang/shorts">YouTube</a>
+            </div>
+            </div>
+        </div>
+        
+        <div class="bio-section">
+            <p class="bio-text">
+                I care about loving God and people.
+            </p>
+            <p class="bio-text">
+                Undergraduate student at the University of Illinois Urbana-Champaign, studying Computer Science and Physics.
+            </p>
+            <p class="bio-text">
+                My research interests lie in <strong>reinforcement learning with agents</strong>. I want to build 
+                <strong>smart, autonomous, tool-using</strong> agents. 
+
+                Currently a researcher at ULab UIUC, advised by Professor Jiaxuan You. I'm super grateful to have a group of 
+                people with similar goals on building smarter intelligence. 
+               
+            </p>
+            <p class="bio-text">
+
+                Previously, I collaborated with the NVIDIA math reasoning team through Dr. Branislav Kisacanin, where I 
+                designed the math olympiad dataset for our published study. For two years in high school I worked with the amazing 
+                <code>QMCPy</code> team, advised by Professsor Fred Hickernell and designed many randomization techniques. 
+
+            </p>
+            <p class="bio-text">
+                Also super thankful to be part of the 2025 Heidelberg Laureate Forum as a Young Researcher! I was able to 
+                have meaningful conversations with many legendary figures like Richard Sutton, David Silver, Pat Hanrahan,
+                Sanjeev Aurora, Ngo Bao Chau, Jack Dongarra, Bob Tarjan and many more! 
+            </p>
+
+
+            <div class="resume-content" style="margin-top: 2.5rem;">
+                 <h3 style="font-size: 1.2rem; margin-bottom: 1rem; margin-top: 2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem;">Awards</h3>
+                <ul style="list-style: none; padding: 0; font-size: 0.95rem;">
+                    <li style="margin-bottom: 0.5rem;">
+                        <strong>Heidelberg Laureate Forum</strong> <span style="color: #666;">— Selected Young Researcher (2025)</span>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <strong>MCM/ICM</strong> <span style="color: #666;">— Meritorious Winner (top 8%) (2023)</span>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <strong>USAMO</strong> <span style="color: #666;">— Qualifier (2023)</span>
+                    </li> 
+                </ul>
+
+                 <div class="search-container">
+                    <input type="text" id="content-search" class="search-input" placeholder="Search podcasts, writings, math notes...">
+                </div>
+
+                <h3 class="section-header">Publications</h3>
+                <div id="publications-container">
+                    <!-- Publications will be loaded here -->
+                </div>
+
+
+                <h3 id="podcast-section" class="section-header">Ethical AI Podcast</h3>
+                <div id="podcast-container">
+                    <!-- Podcasts will be loaded here -->
+                </div>
+
+                <h3 id="writing-section" class="section-header">Writings</h3>
+                <div id="writings-container">
+                    <!-- Writings will be loaded here -->
+                </div>
+
+                <h3 id="math-section" class="section-header">Math Notes</h3>
+                <div id="math-container">
+                    <!-- Math Notes will be loaded here -->
+                </div>
+
+               
+            </div>
+            
+        </div>
+    </main>
+    <script src="loadHomeContent.js"></script>
 </body>
-
-
 </html>

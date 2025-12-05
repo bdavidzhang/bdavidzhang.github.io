@@ -1,0 +1,20 @@
+[
+    {
+        "title": "GTAlign: Game-Theoretic Alignment of LLM Assistants for Mutual Welfare",
+        "venue": "Submitted to ICLR 2026",
+        "year": "2025",
+        "description": "Proposed a game-theoretic framework modeling user-AI interaction as a cooperative game to align LLM assistants with user preferences for mutual welfare."
+    },
+    {
+        "title": "The Challenge of Teaching Reasoning to LLMs Without RL or Distillation",
+        "venue": "Presented at AI4Math@ICML 2025",
+        "year": "2025",
+        "description": "Explored minimal fine-tuning approaches for inducing chain-of-thought reasoning in base language models. Selected as a reviewer for the workshop."
+    },
+    {
+        "title": "Median of Means Sampling for the Keister Function",
+        "venue": "Submitted to International Monte Carlo Conference 2026",
+        "year": "2025",
+        "description": "Investigated the performance of median-of-means sampling for computing the Keister function integral, demonstrating improved robustness."
+    }
+]

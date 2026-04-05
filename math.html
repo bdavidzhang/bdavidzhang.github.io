@@ -1,47 +1,191 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta name="description" content="David Zhang's Math Notes">
-        <title>David Zhang - Math</title>
-        <link rel="stylesheet" href="inter.css">
-        <link rel="stylesheet" href="newmin.css">
-        <link rel="stylesheet" href="notes.css"> 
-    </head>
-    <body>
-        <header>
-            <h1>David Zhang</h1>
-            <nav>
-                <a href="index.html">Home</a> /
-                <a href="index.html#podcast-section">Podcast</a> /
-                <a href="writing.html">Writing</a> /
-                <a href="math.html" style="font-weight:bold;">Math</a>
-            </nav>
-        </header>
-        <div class="main">
-            <h2>My Math Notes</h2>
-            
-            <div class="filter-section">
-                <div class="filter-group">
-                    <label for="subjectSelector">Filter by subject: </label>
-                    <select id="subjectSelector">
-                        <option value="all">All Subjects</option>
-                        <!-- Subjects will be dynamically loaded here -->
-                    </select>
-                </div>
-                
-                <div class="filter-group">
-                    <label for="tagSelector">Filter by tag: </label>
-                    <select id="tagSelector">
-                        <option value="all">All Tags</option>
-                        <!-- Tags will be dynamically loaded here -->
-                    </select>
-                </div>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="David Zhang's Math Notes">
+    <title>David Zhang - Math</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@700;800&family=Inter:wght@300;400;500;600&display=swap');
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      :root {
+        --bg: #0a0a0c; --bg2: #101014; --bg3: #161619;
+        --accent: #7fddaa; --accent-dim: rgba(127,221,170,0.15);
+        --text: #e8ece9; --text-dim: #6a7d70; --text-muted: #444a46;
+        --border: #1e2120;
+      }
+      body {
+        background: var(--bg); color: var(--text);
+        font-family: 'Inter', -apple-system, sans-serif;
+        max-width: 780px; margin: 0 auto; padding: 0 24px;
+        min-height: 100vh;
+      }
+
+      /* Nav */
+      .site-nav {
+        padding: 24px 0; border-bottom: 1px solid var(--border);
+        margin-bottom: 40px;
+        display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      }
+      .site-nav .site-title {
+        font-family: 'Syne', sans-serif;
+        font-weight: 800; font-size: 1.1rem;
+        color: var(--text); text-decoration: none; margin-right: auto;
+      }
+      .site-nav .site-title:hover { color: var(--accent); }
+      .site-nav a {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem; font-weight: 500;
+        letter-spacing: 0.06em; text-transform: uppercase;
+        text-decoration: none; color: var(--text-dim);
+        padding: 6px 12px; border: 1px solid var(--border);
+        border-radius: 4px; transition: all 0.25s ease;
+      }
+      .site-nav a:hover { color: var(--accent); border-color: var(--accent-dim); }
+      .site-nav a.active { color: var(--accent); border-color: rgba(127,221,170,0.3); background: rgba(127,221,170,0.04); }
+
+      /* Page header */
+      .page-title {
+        font-family: 'Syne', sans-serif;
+        font-weight: 800; font-size: 1.8rem;
+        color: var(--text); margin-bottom: 24px;
+        letter-spacing: -0.02em;
+      }
+
+      /* Filter */
+      .filter-section {
+        margin-bottom: 28px;
+        display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+      }
+      .filter-group {
+        display: flex; align-items: center; gap: 8px;
+      }
+      .filter-group label {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem; color: var(--text-dim);
+      }
+      #subjectSelector, #tagSelector {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        background: var(--bg2); color: var(--text);
+        border: 1px solid var(--border); border-radius: 4px;
+        padding: 6px 12px; outline: none; cursor: pointer;
+      }
+      #subjectSelector:focus, #tagSelector:focus { border-color: var(--accent-dim); }
+
+      /* Note entry */
+      .note-entry {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin-bottom: 12px;
+        overflow: hidden;
+        transition: border-color 0.25s ease, transform 0.2s ease;
+      }
+      .note-entry:hover {
+        border-color: rgba(127,221,170,0.3);
+        transform: translateY(-1px);
+      }
+      .note-header {
+        padding: 18px 20px;
+      }
+      .note-header h3 {
+        font-family: 'Inter', sans-serif;
+        font-weight: 600; font-size: 1rem;
+        margin-bottom: 6px; line-height: 1.4;
+        border: none; padding: 0;
+      }
+      .note-header h3 a {
+        color: var(--accent); text-decoration: none;
+        transition: color 0.2s ease;
+      }
+      .note-header h3 a:hover { color: #a0f0c8; }
+      .note-meta {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem; color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+      .note-description {
+        font-size: 0.85rem; color: var(--text-dim);
+        line-height: 1.55; font-style: normal;
+      }
+      .tags { margin-top: 10px; }
+      .tag {
+        display: inline-block;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.68rem; color: var(--accent);
+        background: var(--accent-dim);
+        padding: 2px 8px; border-radius: 3px;
+        margin-right: 4px; cursor: pointer;
+        text-transform: lowercase;
+        transition: background 0.2s ease;
+      }
+      .tag:hover { background: rgba(127,221,170,0.25); }
+
+      /* Note links */
+      .note-links {
+        padding: 12px 20px;
+        border-top: 1px solid var(--border);
+      }
+      .note-links ul { list-style: none; padding: 0; margin: 0; }
+      .note-links li { margin-bottom: 8px; }
+      .note-links li:last-child { margin-bottom: 0; }
+      .note-links a {
+        display: block; text-decoration: none; color: var(--text);
+        padding: 10px 14px; border-radius: 4px;
+        transition: background 0.2s ease;
+      }
+      .note-links a:hover { background: var(--bg3); }
+      .note-links .link-title {
+        font-weight: 600; display: block;
+        margin-bottom: 2px; color: var(--accent);
+        font-size: 0.88rem;
+      }
+      .note-links .link-description {
+        font-size: 0.8rem; color: var(--text-dim); line-height: 1.4;
+      }
+
+      /* Footer */
+      .site-footer {
+        text-align: center; padding: 40px 0;
+        border-top: 1px solid var(--border); margin-top: 40px;
+      }
+      .site-footer p {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem; color: var(--text-muted);
+      }
+    </style>
+</head>
+<body>
+    <nav class="site-nav">
+      <a href="index.html" class="site-title">David Zhang</a>
+      <a href="index.html">Home</a>
+      <a href="index.html#podcast-section">Podcast</a>
+      <a href="writing.html">Writing</a>
+      <a href="math.html" class="active">Math</a>
+    </nav>
+
+    <h1 class="page-title">Math Notes</h1>
+
+    <div class="main">
+        <div class="filter-section">
+            <div class="filter-group">
+                <label for="subjectSelector">Subject:</label>
+                <select id="subjectSelector">
+                    <option value="all">All Subjects</option>
+                </select>
             </div>
-            
-            <div class="math-notes"></div>
+            <div class="filter-group">
+                <label for="tagSelector">Tag:</label>
+                <select id="tagSelector">
+                    <option value="all">All Tags</option>
+                </select>
+            </div>
         </div>
-        <script src="loadMathNotes.js"></script>
-    </body>
+        <div class="math-notes"></div>
+    </div>
+
+    <footer class="site-footer"><p>&copy; 2025 David Zhang</p></footer>
+    <script src="loadMathNotes.js"></script>
+</body>
 </html>

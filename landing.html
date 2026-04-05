@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>David Zhang</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0c;
+    --accent: #7fddaa;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: #e8ece9;
+    font-family: 'JetBrains Mono', monospace;
+    overflow: hidden;
+    cursor: default;
+  }
+
+  canvas#ca {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+  }
+
+  #link-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 4;
+    pointer-events: none;
+  }
+
+  #link-overlay a, #image-hover {
+    position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    text-decoration: none;
+    color: transparent;
+  }
+
+  #image-hover {
+    border-radius: 50%;
+    z-index: 5;
+  }
+
+  #scanlines {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 3;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+  }
+</style>
+</head>
+<body>
+
+<canvas id="ca"></canvas>
+<div id="scanlines"></div>
+<div id="link-overlay"></div>
+<div id="image-hover"></div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────
+const CELL = 2;
+const ALIVE_PROB = 0.28;
+const FPS = 16;
+const GLOW_R = 4;
+
+const PHASE = {
+  imageStart: 600,
+  imageDone:  2000,
+  nameStart:  1800,
+  nameDone:   3000,
+  subtitle:   3400,
+  bio:        4000,
+  links:      4600,
+};
+
+const LINK_DEFS = [
+  { label: 'GitHub', href: 'https://github.com/bdavidzhang', target: '_blank' },
+  { label: 'LinkedIn', href: 'https://www.linkedin.com/in/bdavidzhang/', target: '_blank' },
+  { label: 'Research', href: '#research' },
+  { label: 'Projects', href: '#projects' },
+  { label: 'Contact', href: 'mailto:davidz10@illinois.edu' },
+];
+
+// ─── STATE ───────────────────────────────────────────────────────────
+const canvas = document.getElementById('ca');
+const ctx = canvas.getContext('2d');
+let W, H, cols, rows, dpr;
+let grid, nextGrid, frozenMask, targetBitmap, glowMap;
+let imgData, pixels;
+let textRegions = [];
+let linkScreenRects = [];
+
+// Image state
+let profileImg = null, jediImg = null;
+let imageColors = null;    // Uint32Array — ABGR per cell for normal photo
+let jediColors = null;     // Uint32Array — ABGR per cell for jedi photo
+let imageMask = null;      // Uint8Array — 1 if cell is part of profile image
+let useJedi = false;       // toggled on hover
+let imgGridX = 0, imgGridY = 0, imgGridSize = 0; // grid coords of image
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cols = Math.ceil(W / CELL);
+  rows = Math.ceil(H / CELL);
+  imgData = ctx.createImageData(W * dpr, H * dpr);
+  pixels = new Uint32Array(imgData.data.buffer);
+}
+
+// ─── IMAGE SAMPLING ──────────────────────────────────────────────────
+function sampleImageToGrid(img, gx, gy, gSize) {
+  // Draw image to offscreen canvas at gSize×gSize, then sample each pixel
+  const off = document.createElement('canvas');
+  off.width = gSize;
+  off.height = gSize;
+  const oc = off.getContext('2d');
+  oc.drawImage(img, 0, 0, gSize, gSize);
+  const id = oc.getImageData(0, 0, gSize, gSize);
+  const d = id.data;
+
+  const colors = new Uint32Array(cols * rows);
+  const mask = new Uint8Array(cols * rows);
+
+  for (let ly = 0; ly < gSize; ly++) {
+    for (let lx = 0; lx < gSize; lx++) {
+      const pi = (ly * gSize + lx) * 4;
+      const r = d[pi], g = d[pi + 1], b = d[pi + 2], a = d[pi + 3];
+
+      // Skip transparent pixels (circular crop)
+      if (a < 100) continue;
+
+      // Circular mask
+      const dx = lx - gSize / 2;
+      const dy = ly - gSize / 2;
+      if (dx * dx + dy * dy > (gSize / 2) * (gSize / 2)) continue;
+
+      const cx = gx + lx;
+      const cy = gy + ly;
+      if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
+
+      const idx = cy * cols + cx;
+      // Slightly desaturate and shift toward the green accent to blend with CA
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const mix = 0.7; // 70% original color, 30% green-tinted
+      const fr = ((r * mix + lum * 0.15 * (1 - mix)) * (a / 255)) | 0;
+      const fg = ((g * mix + lum * 0.5 * (1 - mix)) * (a / 255)) | 0;
+      const fb = ((b * mix + lum * 0.3 * (1 - mix)) * (a / 255)) | 0;
+
+      colors[idx] = 0xFF000000 | (fb << 16) | (fg << 8) | fr;
+      mask[idx] = 1;
+    }
+  }
+  return { colors, mask };
+}
+
+// ─── BITMAP TEXT RENDERING ───────────────────────────────────────────
+function renderTextToBitmap(texts) {
+  const off = document.createElement('canvas');
+  off.width = cols;
+  off.height = rows;
+  const oc = off.getContext('2d');
+  oc.fillStyle = '#000';
+  oc.fillRect(0, 0, cols, rows);
+
+  for (const t of texts) {
+    oc.fillStyle = '#fff';
+    oc.font = `${t.fontWeight || '700'} ${t.fontSize}px ${t.fontFamily || 'Syne, sans-serif'}`;
+    oc.textAlign = 'center';
+    oc.textBaseline = 'middle';
+    if (t.maxWidth) {
+      oc.fillText(t.text, t.x, t.y, t.maxWidth);
+    } else {
+      oc.fillText(t.text, t.x, t.y);
+    }
+  }
+
+  const id = oc.getImageData(0, 0, cols, rows);
+  const bmp = new Uint8Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) {
+    bmp[i] = id.data[i * 4] > 80 ? 1 : 0;
+  }
+  return bmp;
+}
+
+function computeGlowMap(bmp) {
+  const glow = new Float32Array(cols * rows);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!bmp[y * cols + x]) continue;
+      const yMin = Math.max(0, y - GLOW_R);
+      const yMax = Math.min(rows - 1, y + GLOW_R);
+      const xMin = Math.max(0, x - GLOW_R);
+      const xMax = Math.min(cols - 1, x + GLOW_R);
+      for (let ny = yMin; ny <= yMax; ny++) {
+        for (let nx = xMin; nx <= xMax; nx++) {
+          const d = Math.sqrt((nx - x) ** 2 + (ny - y) ** 2);
+          if (d <= GLOW_R) {
+            const ni = ny * cols + nx;
+            glow[ni] = Math.max(glow[ni], 1 - d / GLOW_R);
+          }
+        }
+      }
+    }
+  }
+  return glow;
+}
+
+// ─── GAME OF LIFE ────────────────────────────────────────────────────
+function stepLife() {
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const idx = y * cols + x;
+      if (frozenMask[idx]) {
+        nextGrid[idx] = targetBitmap[idx];
+        continue;
+      }
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          n += grid[((y + dy + rows) % rows) * cols + ((x + dx + cols) % cols)];
+        }
+      }
+      nextGrid[idx] = grid[idx] ? ((n === 2 || n === 3) ? 1 : 0) : (n === 3 ? 1 : 0);
+    }
+  }
+  [grid, nextGrid] = [nextGrid, grid];
+}
+
+// ─── CRYSTALLIZATION ─────────────────────────────────────────────────
+function crystallizeRect(rx, ry, rw, rh, progress) {
+  const maxR = Math.sqrt(rw * rw + rh * rh) / 2;
+  const r = maxR * progress;
+  const cx = rx + rw / 2;
+  const cy = ry + rh / 2;
+
+  const yMin = Math.max(0, Math.floor(ry - GLOW_R));
+  const yMax = Math.min(rows, Math.ceil(ry + rh + GLOW_R));
+  const xMin = Math.max(0, Math.floor(rx - GLOW_R));
+  const xMax = Math.min(cols, Math.ceil(rx + rw + GLOW_R));
+
+  for (let y = yMin; y < yMax; y++) {
+    for (let x = xMin; x < xMax; x++) {
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+      if (d < r) {
+        const idx = y * cols + x;
+        frozenMask[idx] = 1;
+        grid[idx] = targetBitmap[idx];
+      }
+    }
+  }
+}
+
+// Circular crystallization for the profile image
+function crystallizeCircle(cx, cy, radius, progress) {
+  const r = radius * progress;
+  const yMin = Math.max(0, Math.floor(cy - radius - GLOW_R));
+  const yMax = Math.min(rows, Math.ceil(cy + radius + GLOW_R));
+  const xMin = Math.max(0, Math.floor(cx - radius - GLOW_R));
+  const xMax = Math.min(cols, Math.ceil(cx + radius + GLOW_R));
+
+  for (let y = yMin; y < yMax; y++) {
+    for (let x = xMin; x < xMax; x++) {
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+      if (d < r) {
+        const idx = y * cols + x;
+        frozenMask[idx] = 1;
+        grid[idx] = targetBitmap[idx];
+      }
+    }
+  }
+}
+
+// ─── DRAWING ─────────────────────────────────────────────────────────
+const BG_COLOR  = 0xFF0C0A0A;
+const CHAOS_CLR = 0xFF28321E;
+const GLOW_BASE = [127, 221, 170];
+
+function draw(time) {
+  const pw = W * dpr;
+  const ph = H * dpr;
+  const cellPx = CELL * dpr;
+
+  pixels.fill(BG_COLOR);
+
+  const activeImgColors = useJedi ? jediColors : imageColors;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const idx = y * cols + x;
+      const frozen = frozenMask[idx];
+      const alive = grid[idx];
+      const isImg = imageMask && imageMask[idx];
+      const isText = !isImg && frozen && targetBitmap[idx];
+      const gl = frozen ? glowMap[idx] : 0;
+
+      let color = 0;
+
+      if (isImg && frozen && alive && activeImgColors) {
+        // Profile image cell — use sampled color with subtle shimmer
+        const base = activeImgColors[idx];
+        if (base) {
+          const s = 0.92 + 0.08 * Math.sin(time * 0.0015 + x * 0.12 + y * 0.08);
+          const br = ((base & 0xFF) * s) | 0;
+          const bg = (((base >> 8) & 0xFF) * s) | 0;
+          const bb = (((base >> 16) & 0xFF) * s) | 0;
+          color = 0xFF000000 | (bb << 16) | (bg << 8) | br;
+        }
+      } else if (isText && alive) {
+        const s = 0.88 + 0.12 * Math.sin(time * 0.002 + x * 0.15 + y * 0.1);
+        const r = (210 * s) | 0;
+        const g = (240 * s) | 0;
+        const b = (215 * s) | 0;
+        color = 0xFF000000 | (b << 16) | (g << 8) | r;
+      } else if (frozen && gl > 0.12 && !alive) {
+        const a = gl * 0.22;
+        const r = (GLOW_BASE[0] * a) | 0;
+        const g = (GLOW_BASE[1] * a) | 0;
+        const b = (GLOW_BASE[2] * a) | 0;
+        const br = 10 + r, bg2 = 10 + g, bb = 12 + b;
+        color = 0xFF000000 | (bb << 16) | (bg2 << 8) | br;
+      } else if (alive && !frozen) {
+        color = CHAOS_CLR;
+      } else {
+        continue;
+      }
+
+      const px0 = x * cellPx;
+      const py0 = y * cellPx;
+      const sz = cellPx - dpr;
+      for (let py = py0; py < py0 + sz && py < ph; py++) {
+        const rowOff = py * pw;
+        for (let px = px0; px < px0 + sz && px < pw; px++) {
+          pixels[rowOff + px] = color;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+
+// ─── TEXT + IMAGE LAYOUT ─────────────────────────────────────────────
+function computeLayout() {
+  const cx = cols / 2;
+  const cy = rows / 2;
+
+  const nameSize = Math.max(12, Math.floor(Math.min(cols * 0.055, rows * 0.09)));
+  const subSize = Math.max(5, Math.floor(nameSize * 0.30));
+  const bioSize = Math.max(4, Math.floor(nameSize * 0.24));
+
+  // Image size in grid cells — proportional to viewport
+  imgGridSize = Math.max(30, Math.floor(Math.min(cols * 0.12, rows * 0.22)));
+  const imgRadius = imgGridSize / 2;
+
+  // Total content height: image + gap + name + sub + bio + links
+  const gap = Math.floor(nameSize * 0.5);
+  const totalH = imgGridSize + gap + nameSize + subSize * 2.8 + bioSize * 3.5 + bioSize * 1.4;
+  const startY = cy - totalH / 2;
+
+  // Image position (top of content block, centered)
+  imgGridX = Math.floor(cx - imgGridSize / 2);
+  imgGridY = Math.floor(startY);
+  const imgCenterX = imgGridX + imgRadius;
+  const imgCenterY = imgGridY + imgRadius;
+
+  const nameY = imgGridY + imgGridSize + gap + nameSize * 0.5;
+  const subY = nameY + nameSize * 0.9;
+  const bioY = subY + subSize * 2.8;
+  const linksY = bioY + bioSize * 3.5;
+
+  const linkStr = LINK_DEFS.map(l => l.label).join('      ');
+
+  const mc = document.createElement('canvas').getContext('2d');
+
+  mc.font = `800 ${nameSize}px Syne, sans-serif`;
+  const nameW = mc.measureText('David Zhang').width;
+
+  mc.font = `400 ${subSize}px JetBrains Mono, monospace`;
+  const subW = mc.measureText('CS & Physics · UIUC').width;
+
+  mc.font = `300 ${bioSize}px JetBrains Mono, monospace`;
+  const bioW = mc.measureText('Building at the intersection of math and machines').width;
+
+  mc.font = `500 ${bioSize}px JetBrains Mono, monospace`;
+  const linkW = mc.measureText(linkStr).width;
+
+  const texts = [
+    { text: 'David Zhang', x: cx, y: nameY, fontSize: nameSize, fontFamily: 'Syne, sans-serif', fontWeight: '800' },
+    { text: 'CS & Physics · UIUC', x: cx, y: subY, fontSize: subSize, fontFamily: 'JetBrains Mono, monospace', fontWeight: '400' },
+    { text: 'Building at the intersection of math and machines', x: cx, y: bioY, fontSize: bioSize, fontFamily: 'JetBrains Mono, monospace', fontWeight: '300', maxWidth: cols * 0.85 },
+    { text: linkStr, x: cx, y: linksY, fontSize: bioSize, fontFamily: 'JetBrains Mono, monospace', fontWeight: '500', maxWidth: cols * 0.9 },
+  ];
+
+  const pad = 6;
+  textRegions = [
+    { key: 'image',    x: imgGridX - pad, y: imgGridY - pad, w: imgGridSize + pad * 2, h: imgGridSize + pad * 2, cx: imgCenterX, cy: imgCenterY, r: imgRadius + pad },
+    { key: 'name',     x: cx - nameW / 2 - pad, y: nameY - nameSize * 0.7 - pad, w: nameW + pad * 2, h: nameSize * 1.4 + pad * 2 },
+    { key: 'subtitle', x: cx - subW / 2 - pad,  y: subY - subSize * 0.7 - pad,   w: subW + pad * 2,  h: subSize * 1.4 + pad * 2 },
+    { key: 'bio',      x: cx - Math.min(bioW, cols * 0.85) / 2 - pad, y: bioY - bioSize * 0.7 - pad, w: Math.min(bioW, cols * 0.85) + pad * 2, h: bioSize * 1.4 + pad * 2 },
+    { key: 'links',    x: cx - Math.min(linkW, cols * 0.9) / 2 - pad, y: linksY - bioSize * 0.7 - pad, w: Math.min(linkW, cols * 0.9) + pad * 2, h: bioSize * 1.4 + pad * 2 },
+  ];
+
+  // Link hit areas
+  linkScreenRects = [];
+  mc.font = `500 ${bioSize}px JetBrains Mono, monospace`;
+  const labels = LINK_DEFS.map(l => l.label);
+  const spacing = '      ';
+  const fullStr = labels.join(spacing);
+  const fullW = Math.min(mc.measureText(fullStr).width, cols * 0.9);
+  const scale = fullW / mc.measureText(fullStr).width;
+
+  let cursor = 0;
+  for (let i = 0; i < LINK_DEFS.length; i++) {
+    const prefixW = mc.measureText(fullStr.substring(0, cursor)).width * scale;
+    const labelW = mc.measureText(labels[i]).width * scale;
+    linkScreenRects.push({
+      x: (cx - fullW / 2 + prefixW) * CELL,
+      y: (linksY - bioSize * 0.7) * CELL,
+      w: labelW * CELL,
+      h: bioSize * 1.6 * CELL,
+    });
+    cursor += labels[i].length + spacing.length;
+  }
+
+  return texts;
+}
+
+// ─── POSITION LINK HIT AREAS + IMAGE HOVER ZONE ─────────────────────
+function positionOverlays() {
+  const overlay = document.getElementById('link-overlay');
+  overlay.innerHTML = '';
+  for (let i = 0; i < LINK_DEFS.length; i++) {
+    const r = linkScreenRects[i];
+    const a = document.createElement('a');
+    a.href = LINK_DEFS[i].href;
+    if (LINK_DEFS[i].target) { a.target = LINK_DEFS[i].target; a.rel = 'noopener'; }
+    a.textContent = LINK_DEFS[i].label;
+    a.style.left = r.x + 'px';
+    a.style.top = r.y + 'px';
+    a.style.width = r.w + 'px';
+    a.style.height = r.h + 'px';
+    overlay.appendChild(a);
+  }
+
+  // Image hover zone
+  const ih = document.getElementById('image-hover');
+  const screenX = imgGridX * CELL;
+  const screenY = imgGridY * CELL;
+  const screenSize = imgGridSize * CELL;
+  ih.style.left = screenX + 'px';
+  ih.style.top = screenY + 'px';
+  ih.style.width = screenSize + 'px';
+  ih.style.height = screenSize + 'px';
+}
+
+// ─── MAIN LOOP ───────────────────────────────────────────────────────
+let startTime = null;
+let lastStep = 0;
+
+function loop(timestamp) {
+  if (!startTime) startTime = timestamp;
+  const elapsed = timestamp - startTime;
+
+  if (timestamp - lastStep > 1000 / FPS) {
+    stepLife();
+    lastStep = timestamp;
+  }
+
+  for (const region of textRegions) {
+    let ps, pd;
+    if (region.key === 'image')         { ps = PHASE.imageStart; pd = PHASE.imageDone - PHASE.imageStart; }
+    else if (region.key === 'name')     { ps = PHASE.nameStart;  pd = PHASE.nameDone - PHASE.nameStart; }
+    else if (region.key === 'subtitle') { ps = PHASE.subtitle;   pd = 800; }
+    else if (region.key === 'bio')      { ps = PHASE.bio;        pd = 900; }
+    else if (region.key === 'links')    { ps = PHASE.links;      pd = 900; }
+
+    if (elapsed > ps) {
+      const p = Math.min(1, (elapsed - ps) / pd);
+      const ep = 1 - Math.pow(1 - p, 3);
+      if (region.key === 'image') {
+        crystallizeCircle(region.cx, region.cy, region.r, ep);
+      } else {
+        crystallizeRect(region.x, region.y, region.w, region.h, ep);
+      }
+    }
+  }
+
+  draw(timestamp);
+  requestAnimationFrame(loop);
+}
+
+// ─── IMAGE LOADING ───────────────────────────────────────────────────
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────
+async function fullInit() {
+  // Load both images
+  if (!profileImg) {
+    [profileImg, jediImg] = await Promise.all([
+      loadImage('assets/me_circle.png'),
+      loadImage('assets/me_jedi.png'),
+    ]);
+  }
+
+  resize();
+  const n = cols * rows;
+  grid = new Uint8Array(n);
+  nextGrid = new Uint8Array(n);
+  frozenMask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) grid[i] = Math.random() < ALIVE_PROB ? 1 : 0;
+
+  // Compute layout (text + image positioning)
+  const texts = computeLayout();
+
+  // Sample both images to grid
+  const normal = sampleImageToGrid(profileImg, imgGridX, imgGridY, imgGridSize);
+  const jedi = sampleImageToGrid(jediImg, imgGridX, imgGridY, imgGridSize);
+  imageColors = normal.colors;
+  imageMask = normal.mask;
+  jediColors = jedi.colors;
+
+  // Build target bitmap: text + image cells merged
+  targetBitmap = renderTextToBitmap(texts);
+  for (let i = 0; i < n; i++) {
+    if (imageMask[i]) targetBitmap[i] = 1;
+  }
+
+  glowMap = computeGlowMap(targetBitmap);
+  positionOverlays();
+  startTime = null;
+  requestAnimationFrame(loop);
+}
+
+// Jedi hover toggle
+const imageHover = document.getElementById('image-hover');
+imageHover.addEventListener('mouseenter', () => { useJedi = true; });
+imageHover.addEventListener('mouseleave', () => { useJedi = false; });
+// Mobile tap toggle
+imageHover.addEventListener('click', () => { useJedi = !useJedi; });
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(fullInit, 200);
+});
+
+document.fonts.ready.then(fullInit);
+</script>
+</body>
+</html>

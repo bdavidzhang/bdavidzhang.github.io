@@ -1,0 +1,1193 @@
+/* museum.css — the whole DOM overlay for the 3D museum.
+ *
+ * Everything here sits on top of <canvas id="scene">. The rule that keeps the
+ * canvas usable (pointer lock, click-to-look) is simple: every overlay layer is
+ * position:fixed and pointer-events:none, and only genuinely interactive
+ * elements switch pointer-events back on.
+ *
+ * Colours come from the site's own tokens (--nc-*) via a --mus-* indirection,
+ * so the museum stays in step with newmin.css but still renders correctly if it
+ * is ever loaded on its own. No font imports: inter.css already did that.
+ */
+
+/* ---------------------------------------------------------------- tokens -- */
+
+:root {
+  --mus-font: var(--nc-font-sans, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --mus-mono: var(--nc-font-mono, Consolas, monaco, 'Ubuntu Mono', 'Courier New', monospace);
+
+  --mus-tx-1: var(--nc-tx-1, #111111);
+  --mus-tx-2: var(--nc-tx-2, #2a2a2a);
+  --mus-tx-3: #6a6459;
+  --mus-lk: var(--nc-lk-1, #0070f3);
+
+  --mus-surface: rgba(255, 255, 255, 0.94);
+  --mus-surface-2: rgba(245, 243, 238, 0.92);
+  --mus-surface-3: rgba(232, 228, 219, 0.9);
+  --mus-line: rgba(35, 32, 27, 0.14);
+  --mus-line-soft: rgba(35, 32, 27, 0.07);
+  --mus-scrim: rgba(237, 233, 225, 0.55);
+  --mus-loader-bg: rgba(240, 237, 230, 0.97);
+  --mus-shadow: 0 18px 52px rgba(38, 32, 24, 0.18);
+  --mus-shadow-sm: 0 6px 20px rgba(38, 32, 24, 0.12);
+  --mus-on-ink: #faf8f3;
+  --mus-stick-bg: rgba(255, 255, 255, 0.3);
+  --mus-stick-knob: rgba(35, 32, 27, 0.32);
+
+  --mus-radius: 12px;
+  --mus-ease: cubic-bezier(0.22, 0.75, 0.24, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mus-tx-1: var(--nc-tx-1, #f2efe8);
+    --mus-tx-2: var(--nc-tx-2, #ddd8ce);
+    --mus-tx-3: #979186;
+    --mus-lk: var(--nc-lk-1, #3291ff);
+
+    --mus-surface: rgba(18, 18, 21, 0.94);
+    --mus-surface-2: rgba(28, 28, 33, 0.92);
+    --mus-surface-3: rgba(40, 40, 46, 0.9);
+    --mus-line: rgba(240, 236, 228, 0.16);
+    --mus-line-soft: rgba(240, 236, 228, 0.08);
+    --mus-scrim: rgba(6, 6, 8, 0.6);
+    --mus-loader-bg: rgba(10, 10, 12, 0.97);
+    --mus-shadow: 0 18px 52px rgba(0, 0, 0, 0.6);
+    --mus-shadow-sm: 0 6px 20px rgba(0, 0, 0, 0.5);
+    --mus-on-ink: #0c0c0e;
+    --mus-stick-bg: rgba(240, 236, 228, 0.09);
+    --mus-stick-knob: rgba(240, 236, 228, 0.34);
+  }
+}
+
+/* ------------------------------------------------------------------ root -- */
+
+.mus-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  font-family: var(--mus-font);
+  color: var(--mus-tx-1);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mus-root [hidden] {
+  display: none !important;
+}
+
+/* While the room map is up the overlay catches everything, so a stray click
+   dismisses the map instead of re-locking the pointer on the canvas. */
+.mus-root.is-mapping {
+  pointer-events: auto;
+}
+
+.mus-root button,
+.mus-root a {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.mus-root button {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: inherit;
+  text-align: inherit;
+}
+
+/* museum.html deliberately loads no base stylesheet, so these undo the UA
+   defaults; they also fence the overlay off from newmin.css should it ever be
+   added to the page. */
+.mus-root h1,
+.mus-root h2,
+.mus-root h3,
+.mus-root h4,
+.mus-root h5,
+.mus-root h6 {
+  padding: 0;
+  border: 0;
+}
+
+.mus-root dd::before {
+  content: none;
+}
+
+.mus-root dt {
+  font-weight: inherit;
+}
+
+.mus-root :focus-visible {
+  outline: 2px solid var(--mus-lk);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.mus-root kbd {
+  display: inline-block;
+  min-width: 1.55em;
+  padding: 2px 6px;
+  border: 1px solid var(--mus-line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--mus-surface-2);
+  color: var(--mus-tx-2);
+  font-family: var(--mus-mono);
+  font-size: 0.72em;
+  line-height: 1.4;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* ---------------------------------------------------------------- loader -- */
+
+/* Stacking inside .mus-root, low to high:
+   reticle 1 · plate 2 · prompt 3 · hud 4 · map 6 · perf 7 · reader 8 · loader 9 */
+
+.mus-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  padding: 6vh 1.5rem;
+  overflow-y: auto;
+  background: var(--mus-loader-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity 0.3s var(--mus-ease), background-color 0.5s var(--mus-ease),
+    backdrop-filter 0.5s var(--mus-ease);
+}
+
+.mus-loader.is-ready {
+  background: var(--mus-scrim);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  cursor: pointer;
+}
+
+.mus-loader.is-gone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mus-loader-inner {
+  width: min(38rem, 100%);
+  text-align: left;
+}
+
+.mus-eyebrow {
+  margin: 0 0 0.75rem;
+  font-family: var(--mus-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--mus-tx-3);
+}
+
+.mus-loader-title {
+  margin: 0;
+  font-size: clamp(1.9rem, 5vw, 2.7rem);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+  color: var(--mus-tx-1);
+}
+
+.mus-loader-sub {
+  margin: 0.9rem 0 0;
+  max-width: 34rem;
+  color: var(--mus-tx-3);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.mus-bar {
+  position: relative;
+  height: 2px;
+  margin: 2.25rem 0 0.6rem;
+  background: var(--mus-line-soft);
+  overflow: hidden;
+}
+
+.mus-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--mus-lk);
+  transition: width 0.45s var(--mus-ease);
+}
+
+.mus-bar-label {
+  margin: 0;
+  font-family: var(--mus-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  color: var(--mus-tx-3);
+}
+
+.mus-loader.is-ready .mus-bar {
+  opacity: 0;
+}
+
+.mus-legend {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.55rem 1.1rem;
+  align-items: baseline;
+  margin: 2.4rem 0 0;
+  padding: 1.4rem 0 0;
+  border-top: 1px solid var(--mus-line-soft);
+}
+
+.mus-legend-key {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.mus-legend-val {
+  margin: 0;
+  color: var(--mus-tx-3);
+  font-size: 0.9rem;
+}
+
+.mus-enter {
+  margin-top: 2.4rem;
+  padding: 0.85rem 1.7rem;
+  border: 1px solid var(--mus-tx-1);
+  border-radius: 999px;
+  background: var(--mus-tx-1);
+  color: var(--mus-on-ink);
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: opacity 0.2s var(--mus-ease), transform 0.2s var(--mus-ease);
+}
+
+.mus-enter:disabled {
+  opacity: 0.32;
+  cursor: progress;
+}
+
+.mus-enter:not(:disabled):hover,
+.mus-enter:not(:disabled):focus {
+  background: var(--mus-tx-1);
+  transform: translateY(-1px);
+}
+
+.mus-loader-foot {
+  margin: 1.1rem 0 0;
+  font-size: 0.85rem;
+}
+
+.mus-loader-foot a {
+  color: var(--mus-tx-3);
+  text-decoration: none;
+  border-bottom: 1px solid var(--mus-line);
+}
+
+.mus-loader-foot a:hover {
+  color: var(--mus-lk);
+  border-color: currentColor;
+}
+
+/* -------------------------------------------------- reticle + focus cue -- */
+
+.mus-reticle {
+  position: fixed;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s var(--mus-ease);
+}
+
+.mus-root.is-entered .mus-reticle {
+  opacity: 0.65;
+}
+
+.mus-root.is-reading .mus-reticle {
+  opacity: 0;
+}
+
+.mus-reticle-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mus-tx-1);
+  box-shadow: 0 0 0 1.5px var(--mus-surface);
+}
+
+.mus-prompt {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, 3.2rem) scale(0.98);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  max-width: min(30rem, 88vw);
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 999px;
+  background: var(--mus-surface);
+  box-shadow: var(--mus-shadow-sm);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s var(--mus-ease), transform 0.16s var(--mus-ease);
+}
+
+.mus-prompt.is-on {
+  opacity: 1;
+  transform: translate(-50%, 2.6rem) scale(1);
+}
+
+.mus-prompt-kind {
+  flex: none;
+  font-family: var(--mus-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mus-tx-3);
+}
+
+.mus-prompt-title {
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mus-prompt-cue {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--mus-line-soft);
+  font-size: 0.8rem;
+  color: var(--mus-tx-3);
+}
+
+.mus-prompt-btn,
+.mus-prompt-btn:hover,
+.mus-prompt-btn:focus {
+  flex: none;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  background: var(--mus-tx-1);
+  color: var(--mus-on-ink);
+  font-size: 0.82rem;
+  font-weight: 500;
+  pointer-events: auto;
+}
+
+/* -------------------------------------------------------------- nameplate */
+
+.mus-plate {
+  position: fixed;
+  z-index: 2;
+  top: clamp(1rem, 3vw, 2rem);
+  left: clamp(1rem, 3vw, 2rem);
+  max-width: min(20rem, 60vw);
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--mus-line);
+  opacity: 0;
+  transition: opacity 0.4s var(--mus-ease);
+}
+
+.mus-root.is-entered .mus-plate {
+  opacity: 1;
+}
+
+.mus-root.is-reading .mus-plate {
+  opacity: 0;
+}
+
+.mus-plate.is-in .mus-plate-index,
+.mus-plate.is-in .mus-plate-title,
+.mus-plate.is-in .mus-plate-sub {
+  animation: mus-rise 0.5s var(--mus-ease) both;
+}
+
+.mus-plate.is-in .mus-plate-title {
+  animation-delay: 0.04s;
+}
+
+.mus-plate.is-in .mus-plate-sub {
+  animation-delay: 0.08s;
+}
+
+@keyframes mus-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mus-plate-index {
+  display: block;
+  font-family: var(--mus-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  color: var(--mus-tx-3);
+}
+
+.mus-plate-title {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.1rem, 2.6vw, 1.45rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: var(--mus-tx-1);
+  text-shadow: 0 1px 12px var(--mus-scrim);
+}
+
+.mus-plate-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--mus-tx-3);
+}
+
+/* -------------------------------------------------------------------- HUD */
+
+.mus-hud {
+  position: fixed;
+  z-index: 4;
+  top: clamp(1rem, 3vw, 2rem);
+  right: clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.4s var(--mus-ease);
+}
+
+.mus-root.is-entered .mus-hud {
+  opacity: 1;
+}
+
+.mus-root.is-reading .mus-hud {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mus-hud-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.42rem 0.8rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 999px;
+  background: var(--mus-surface);
+  box-shadow: var(--mus-shadow-sm);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 0.82rem;
+  color: var(--mus-tx-2);
+  text-decoration: none;
+  pointer-events: auto;
+  transition: color 0.18s var(--mus-ease), border-color 0.18s var(--mus-ease);
+}
+
+.mus-hud-btn:hover,
+.mus-hud-btn:focus {
+  background: var(--mus-surface);
+  color: var(--mus-lk);
+  border-color: var(--mus-lk);
+}
+
+.mus-hud-exit {
+  font-size: 0.78rem;
+  color: var(--mus-tx-3);
+}
+
+/* --------------------------------------------------------------- room map */
+
+.mus-map {
+  position: fixed;
+  z-index: 6;
+  top: 50%;
+  left: 50%;
+  width: min(30rem, 92vw);
+  max-height: min(78vh, 40rem);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mus-line);
+  border-radius: var(--mus-radius);
+  background: var(--mus-surface);
+  box-shadow: var(--mus-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  overflow: hidden;
+  opacity: 0;
+  transform: translate(-50%, -48%) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.2s var(--mus-ease), transform 0.24s var(--mus-ease);
+}
+
+.mus-map.is-open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.mus-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem 0.75rem 1.2rem;
+  border-bottom: 1px solid var(--mus-line-soft);
+}
+
+.mus-map-heading {
+  margin: 0;
+  font-family: var(--mus-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mus-tx-3);
+}
+
+.mus-map-close {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--mus-tx-3);
+}
+
+.mus-map-close:hover {
+  background: var(--mus-surface-3);
+  color: var(--mus-tx-1);
+}
+
+.mus-map-list {
+  margin: 0;
+  padding: 0.4rem;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mus-map-li {
+  margin: 0;
+}
+
+.mus-map-item {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr;
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  text-align: left;
+  transition: background-color 0.15s var(--mus-ease);
+}
+
+.mus-map-item:hover {
+  background: var(--mus-surface-2);
+}
+
+.mus-map-num {
+  grid-row: span 2;
+  font-family: var(--mus-mono);
+  font-size: 0.72rem;
+  color: var(--mus-tx-3);
+}
+
+.mus-map-name {
+  font-size: 0.98rem;
+  font-weight: 500;
+  color: var(--mus-tx-1);
+}
+
+.mus-map-sub {
+  grid-column: 2;
+  font-size: 0.8rem;
+  color: var(--mus-tx-3);
+}
+
+.mus-map-item.is-current {
+  background: var(--mus-surface-3);
+}
+
+.mus-map-item.is-current .mus-map-num,
+.mus-map-item.is-current .mus-map-name {
+  color: var(--mus-lk);
+}
+
+.mus-map-hint {
+  margin: 0;
+  padding: 0.7rem 1.2rem 0.9rem;
+  border-top: 1px solid var(--mus-line-soft);
+  font-size: 0.78rem;
+  color: var(--mus-tx-3);
+}
+
+/* ----------------------------------------------------------------- reader */
+
+.mus-reader {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.mus-reader.is-open {
+  pointer-events: auto;
+}
+
+.mus-reader-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--mus-scrim);
+  opacity: 0;
+  transition: opacity 0.3s var(--mus-ease);
+}
+
+.mus-reader.is-open .mus-reader-scrim {
+  opacity: 1;
+}
+
+.mus-reader-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(44rem, 56vw);
+  min-width: min(100vw, 23rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--mus-surface);
+  border-left: 1px solid var(--mus-line);
+  box-shadow: var(--mus-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateX(100%);
+  transition: transform 0.34s var(--mus-ease);
+  outline: none;
+}
+
+.mus-reader.is-open .mus-reader-panel {
+  transform: none;
+}
+
+.mus-reader-close {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 2;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 50%;
+  background: var(--mus-surface);
+  color: var(--mus-tx-2);
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: background-color 0.15s var(--mus-ease), color 0.15s var(--mus-ease);
+}
+
+.mus-reader-close:hover {
+  background: var(--mus-tx-1);
+  color: var(--mus-on-ink);
+}
+
+.mus-reader-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: clamp(2.4rem, 4vw, 3.4rem) clamp(1.4rem, 3.4vw, 3.4rem) clamp(2.5rem, 5vw, 4rem);
+}
+
+.mus-reader-head {
+  max-width: 68ch;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid var(--mus-line-soft);
+}
+
+.mus-reader-kind {
+  margin: 0 0 0.65rem;
+  font-family: var(--mus-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mus-tx-3);
+}
+
+.mus-reader-title {
+  margin: 0;
+  font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.18;
+  color: var(--mus-tx-1);
+}
+
+.mus-reader-meta {
+  margin: 0.55rem 0 0;
+  font-size: 0.88rem;
+  color: var(--mus-tx-3);
+}
+
+.mus-reader-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mus-reader-tag {
+  margin: 0;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 999px;
+  font-family: var(--mus-mono);
+  font-size: 0.7rem;
+  color: var(--mus-tx-3);
+}
+
+.mus-reader-figure {
+  max-width: 68ch;
+  margin: 1.8rem 0 0;
+}
+
+.mus-reader-img {
+  display: block;
+  max-width: min(12rem, 45%);
+  height: auto;
+  border-radius: var(--mus-radius);
+}
+
+/* --- the actual prose ----------------------------------------------------- */
+
+.mus-reader-body {
+  max-width: 68ch;
+  margin-top: 1.7rem;
+  color: var(--mus-tx-2);
+  font-size: 1.02rem;
+  line-height: 1.68;
+}
+
+.mus-reader-body > :first-child {
+  margin-top: 0;
+}
+
+.mus-reader-body p,
+.mus-reader-body ul,
+.mus-reader-body ol,
+.mus-reader-body blockquote,
+.mus-reader-body pre,
+.mus-reader-body table,
+.mus-reader-body figure {
+  margin: 0 0 1.15rem;
+}
+
+.mus-reader-body h1,
+.mus-reader-body h2,
+.mus-reader-body h3,
+.mus-reader-body h4,
+.mus-reader-body h5,
+.mus-reader-body h6 {
+  margin: 2.1rem 0 0.65rem;
+  color: var(--mus-tx-1);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+.mus-reader-body h1 { font-size: 1.5rem; }
+.mus-reader-body h2 { font-size: 1.3rem; }
+.mus-reader-body h3 { font-size: 1.13rem; }
+.mus-reader-body h4,
+.mus-reader-body h5,
+.mus-reader-body h6 {
+  font-size: 1rem;
+  color: var(--mus-tx-2);
+}
+
+.mus-reader-body ul,
+.mus-reader-body ol {
+  padding-left: 1.35rem;
+}
+
+.mus-reader-body li {
+  margin: 0.35rem 0;
+}
+
+.mus-reader-body li::marker {
+  color: var(--mus-tx-3);
+}
+
+.mus-reader-body a {
+  color: var(--mus-lk);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--mus-lk) 35%, transparent);
+}
+
+.mus-reader-body a:hover {
+  border-bottom-color: currentColor;
+}
+
+.mus-reader-body strong {
+  color: var(--mus-tx-1);
+  font-weight: 600;
+}
+
+.mus-reader-body em {
+  font-style: italic;
+}
+
+.mus-reader-body blockquote {
+  padding: 0.2rem 0 0.2rem 1.1rem;
+  border-left: 2px solid var(--mus-line);
+  color: var(--mus-tx-3);
+  font-style: italic;
+}
+
+.mus-reader-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.mus-reader-body code,
+.mus-reader-body kbd,
+.mus-reader-body samp {
+  padding: 0.12em 0.36em;
+  border: 1px solid var(--mus-line-soft);
+  border-radius: 4px;
+  background: var(--mus-surface-2);
+  font-family: var(--mus-mono);
+  font-size: 0.86em;
+}
+
+.mus-reader-body pre {
+  padding: 0.95rem 1.1rem;
+  border: 1px solid var(--mus-line-soft);
+  border-radius: 8px;
+  background: var(--mus-surface-2);
+  overflow-x: auto;
+  font-family: var(--mus-mono);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.mus-reader-body pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.mus-reader-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.mus-reader-body hr {
+  height: 0;
+  margin: 1.9rem 0;
+  border: 0;
+  border-top: 1px solid var(--mus-line-soft);
+}
+
+.mus-reader-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.mus-reader-body th,
+.mus-reader-body td {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--mus-line-soft);
+  text-align: left;
+}
+
+.mus-reader-body th {
+  background: var(--mus-surface-2);
+  color: var(--mus-tx-1);
+}
+
+.mus-reader-empty {
+  color: var(--mus-tx-3);
+  font-style: italic;
+}
+
+/* --- reader footer -------------------------------------------------------- */
+
+.mus-reader-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.2rem;
+  max-width: 68ch;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mus-reader-extra {
+  color: var(--mus-lk);
+  font-size: 0.9rem;
+  text-decoration: none;
+  border-bottom: 1px solid var(--mus-line);
+}
+
+.mus-reader-extra:hover {
+  border-bottom-color: currentColor;
+}
+
+.mus-reader-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  max-width: 68ch;
+  margin-top: 2.4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--mus-line-soft);
+}
+
+.mus-reader-link {
+  color: var(--mus-lk);
+  font-size: 0.94rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.mus-reader-link:hover {
+  text-decoration: underline;
+}
+
+.mus-reader-esc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--mus-tx-3);
+}
+
+/* ---------------------------------------------------------------- perf hud */
+
+.mus-perf {
+  position: fixed;
+  z-index: 7;
+  right: clamp(1rem, 3vw, 2rem);
+  bottom: clamp(1rem, 3vw, 2rem);
+  min-width: 11rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 8px;
+  background: var(--mus-surface);
+  box-shadow: var(--mus-shadow-sm);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: var(--mus-mono);
+  font-size: 0.72rem;
+  color: var(--mus-tx-2);
+}
+
+.mus-perf-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mus-tx-3);
+}
+
+.mus-perf-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.18rem 0.9rem;
+  margin: 0;
+}
+
+.mus-perf-key {
+  margin: 0;
+  color: var(--mus-tx-3);
+}
+
+.mus-perf-val {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mus-perf-hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.64rem;
+  color: var(--mus-tx-3);
+}
+
+/* --------------------------------------------------- mobile touch joystick */
+/* Created by controls.js, not by ui.js — styled here so it matches. */
+
+.mus-stick {
+  position: fixed;
+  left: 22px;
+  bottom: 22px;
+  z-index: 20;
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mus-line);
+  border-radius: 50%;
+  background: var(--mus-stick-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+}
+
+.mus-stick-knob {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--mus-stick-knob);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  will-change: transform;
+}
+
+@media (pointer: fine) {
+  .mus-stick {
+    display: none;
+  }
+}
+
+/* fade the stick out of the way while something is being read */
+:root:has(.mus-root.is-reading) .mus-stick {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 640px) {
+  .mus-reader-panel {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    min-width: 0;
+    height: 92vh;
+    height: 92dvh;
+    border-left: 0;
+    border-top: 1px solid var(--mus-line);
+    border-radius: var(--mus-radius) var(--mus-radius) 0 0;
+    transform: translateY(100%);
+  }
+
+  .mus-reader-scroll {
+    padding-top: 3.2rem;
+  }
+
+  .mus-map {
+    width: 100vw;
+    max-width: none;
+    max-height: 76vh;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    border-radius: var(--mus-radius) var(--mus-radius) 0 0;
+    transform: translateY(0.6rem);
+  }
+
+  .mus-map.is-open {
+    transform: none;
+  }
+
+  .mus-plate {
+    max-width: 62vw;
+  }
+
+  .mus-hud {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .mus-prompt {
+    max-width: 92vw;
+  }
+
+  .mus-perf {
+    left: clamp(1rem, 3vw, 2rem);
+    right: auto;
+    bottom: 160px;
+  }
+}
+
+@media (max-height: 620px) {
+  .mus-legend {
+    margin-top: 1.4rem;
+    padding-top: 0.9rem;
+  }
+
+  .mus-enter {
+    margin-top: 1.4rem;
+  }
+}
+
+/* --------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .mus-root *,
+  .mus-root,
+  .mus-stick,
+  .mus-stick-knob {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .mus-reader-panel,
+  .mus-map,
+  .mus-prompt {
+    transform: none !important;
+  }
+
+  .mus-reader:not(.is-open) .mus-reader-panel,
+  .mus-map:not(.is-open) {
+    visibility: hidden;
+  }
+}

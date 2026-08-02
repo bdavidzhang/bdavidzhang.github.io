@@ -105,7 +105,50 @@ Dark mode is handled via `@media (prefers-color-scheme: dark)`.
 - The Publications section, research bio, awards list, and past experience are all commented out in `index.html` — they exist but are hidden
 - `swe_interview` essay ends with `"To be finished."`
 
+## The 3D Museum (`museum.html`)
+
+A walkable first-person gallery rendering the same JSON content as the flat pages.
+**Still no build step** — three.js r169 is vendored at `museum/vendor/` and resolved
+through an `<script type="importmap">` in `museum.html`.
+
+```
+museum.html              # entry: import map, canvas, WebGL/no-JS fallbacks to index.html
+museum/
+├── config.js            # SINGLE SOURCE OF TRUTH — palette, DIMS, ROOMS, TUNING
+├── content.js           # fetches the existing *.json, normalises to one Exhibit shape
+├── engine.js            # renderer, lights, RAF loop, adaptive DPR, per-room culling
+├── architecture.js      # room shells, doorways, merged geometry, edge outlines, colliders
+├── exhibits.js          # framed plates, canvas-texture labels, raycast targets
+├── controls.js          # pointer-lock WASD, circle-vs-AABB collision, touch, keyboard-only
+├── ui.js                # DOM overlay: loader, reader panel, room map, perf readout
+├── museum.css           # overlay styles, reuses --nc-* tokens, light + dark
+├── smoke-test.mjs       # headless contract tests — `node museum/smoke-test.mjs`
+├── vendor/              # three.module.min.js + BufferGeometryUtils
+└── tex/                 # downscaled 256px portraits (assets/*.png are 1.9–6.5 MB, too big)
+```
+
+**Rooms are data.** Add or reorder entries in `ROOMS` in `config.js`; geometry,
+colliders, anchors, the map UI and `#hash` deep links all follow automatically.
+Each room's `source` key names the array `content.js` fills in.
+
+**The core design decision:** 3D handles *navigation*, DOM handles *reading*.
+Walking up to a plate and pressing `E` opens a real HTML panel — text stays
+selectable, zoomable, screen-reader accessible, and crisp at any resolution.
+
+**Performance rules — do not regress these:**
+- No shadow maps. Lights are hemisphere + ambient + one camera-following directional.
+- Only the current room ±1 is ever submitted (`TUNING.cullRadius`); fog hides the seam.
+- Adaptive DPR scales resolution down before frames start dropping (`TUNING.targetFrameMs`).
+- Static meshes are merged per material per room, `matrixAutoUpdate = false`.
+- `update()` loops allocate nothing — temporaries are hoisted to module scope.
+- Raycasting for the focus prompt runs at ~20 Hz, not per frame.
+
+`/log/`, `/testimonies/` and `/diagrams/` are gitignored, so no room may source
+from them — that would publish unpublished material.
+
 ## Deployment
 
 Push to `main` → GitHub Pages auto-deploys. No CI, no build process.
+`/node_modules/` exists only so `museum/smoke-test.mjs` can resolve the bare
+`three` specifier in Node; it is gitignored and not part of the site.
 To test locally, run a local HTTP server (e.g. `python3 -m http.server`) — `fetch()` calls require HTTP, not `file://`.

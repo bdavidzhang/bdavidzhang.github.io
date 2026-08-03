@@ -277,6 +277,78 @@ try {
   console.log(`  FAIL controls threw — ${err.message}`);
 }
 
+console.log('\nmuseum.html');
+try {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../museum.html', import.meta.url), 'utf8');
+
+  // An id/class rule that sets `display` outranks the UA's
+  // `[hidden] { display: none }`, so an element can carry `hidden` and still
+  // render. This shipped once: the boot-error card covered the canvas at
+  // z-index 999 and the museum looked broken while running fine underneath.
+  check('elements using [hidden] are not overridden by a display rule', () => {
+    const hiddenIds = [...html.matchAll(/<[^>]*\bid=["']([\w-]+)["'][^>]*\bhidden\b[^>]*>/g)].map((m) => m[1]);
+    if (!hiddenIds.length) return 'no [hidden] elements found — did the markup change?';
+
+    // Parse the <style> blocks into real rules. Comments are stripped first:
+    // an earlier version of this test matched the literal "[hidden]" inside a
+    // CSS comment and passed vacuously.
+    const css = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]
+      .map((m) => m[1])
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+
+    const rules = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      rules.push({ selectors: m[1].split(',').map((s) => s.trim()), body: m[2] });
+    }
+    const declaresDisplay = (r) => /(^|;)\s*display\s*:/.test(r.body);
+    const declaresDisplayNone = (r) => /(^|;)\s*display\s*:\s*none\s*(;|$)/.test(r.body);
+
+    const globalGuard = rules.some(
+      (r) => r.selectors.some((s) => s === '[hidden]') && declaresDisplayNone(r),
+    );
+
+    const bad = [];
+    for (const id of hiddenIds) {
+      const unguardedDisplay = rules.some(
+        (r) => declaresDisplay(r)
+          && r.selectors.some((s) => s.includes(`#${id}`) && !s.includes('[hidden]')),
+      );
+      const guarded = rules.some(
+        (r) => declaresDisplayNone(r)
+          && r.selectors.some((s) => s.includes(`#${id}[hidden]`)),
+      );
+      if (unguardedDisplay && !guarded && !globalGuard) bad.push(`#${id}`);
+    }
+    return bad.length
+      ? `${bad.join(', ')} set display via an id rule, which outranks [hidden] — they will never hide`
+      : null;
+  });
+
+  check('canvas and fallbacks are present', () => {
+    if (!/id=["']scene["']/.test(html)) return 'missing #scene canvas';
+    if (!/id=["']boot-error["']/.test(html)) return 'missing #boot-error';
+    if (!/type=["']importmap["']/.test(html)) return 'missing import map';
+    return null;
+  });
+
+  check('import map targets exist on disk', () => {
+    const map = html.match(/<script type="importmap">([\s\S]*?)<\/script>/);
+    if (!map) return 'no import map';
+    const { imports } = JSON.parse(map[1]);
+    for (const [, target] of Object.entries(imports)) {
+      if (target.endsWith('/')) continue;               // prefix mapping
+      const p = new URL(`../${target.replace(/^\.\//, '')}`, import.meta.url);
+      try { readFileSync(p); } catch { return `${target} does not exist`; }
+    }
+    return null;
+  });
+} catch (err) {
+  failures.push(`museum.html: ${err.message}`);
+  console.log(`  FAIL museum.html checks threw — ${err.message}`);
+}
+
 console.log('\nui');
 try {
   const mod = await import('./ui.js');

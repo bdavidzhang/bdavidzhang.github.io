@@ -5,21 +5,45 @@
  * position:fixed and pointer-events:none, and only genuinely interactive
  * elements switch pointer-events back on.
  *
- * Colours come from the site's own tokens (--nc-*) via a --mus-* indirection,
- * so the museum stays in step with newmin.css but still renders correctly if it
- * is ever loaded on its own. No font imports: inter.css already did that.
+ * Colours are the museum's own --mus-* tokens and are written out literally.
+ * They used to defer to the site's --nc-* tokens, but those flip inside
+ * newmin.css's own prefers-color-scheme block, which would drag the overlay
+ * back to the OS's preference and put light text on light panels the moment a
+ * day-mode visitor had a dark desktop. Only the (mode-independent) font stacks
+ * still borrow from --nc-*. No font imports: inter.css already did that.
  */
 
 /* ---------------------------------------------------------------- tokens -- */
+
+/* Day is the default and night is an explicit, remembered choice — config.js
+ * explains why (a gallery wants to be lit, and Lambert shading cannot rescue
+ * near-black walls). Nothing below keys off prefers-color-scheme: an OS branch
+ * would fight the visitor's choice, and a dark overlay floating over bright
+ * rooms reads as broken rather than as a theme.
+ *
+ * ui.js stamps the mode twice — `data-museum-mode` on <html>, so the page
+ * background and the boot screens museum.html owns can follow, and `.is-night`
+ * on its own root, so the overlay is still right if only the class survives.
+ * Day values are the plain defaults; night is the override.
+ */
+
+/* Registering the hue makes it animatable, so walking between rooms slides the
+   accent instead of snapping. Browsers without @property still substitute the
+   value — they just get the jump. */
+@property --mus-accent-h {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 42;
+}
 
 :root {
   --mus-font: var(--nc-font-sans, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   --mus-mono: var(--nc-font-mono, Consolas, monaco, 'Ubuntu Mono', 'Courier New', monospace);
 
-  --mus-tx-1: var(--nc-tx-1, #111111);
-  --mus-tx-2: var(--nc-tx-2, #2a2a2a);
+  --mus-tx-1: #23201b;
+  --mus-tx-2: #423c33;
   --mus-tx-3: #6a6459;
-  --mus-lk: var(--nc-lk-1, #0070f3);
+  --mus-lk: #0070f3;
 
   --mus-surface: rgba(255, 255, 255, 0.94);
   --mus-surface-2: rgba(245, 243, 238, 0.92);
@@ -33,31 +57,86 @@
   --mus-on-ink: #faf8f3;
   --mus-stick-bg: rgba(255, 255, 255, 0.3);
   --mus-stick-knob: rgba(35, 32, 27, 0.32);
+  --mus-page-bg: #ede9e1;
+
+  /* Per-room accent. setRoom() writes only the hue; saturation and lightness
+     are fixed per mode so every room lands at the same legibility. The hue is
+     spelled out here as well as in @property above, so browsers that ignore
+     @property still have a value to substitute. */
+  --mus-accent-h: 42;
+  --mus-accent-s: 62%;
+  --mus-accent-l: 32%;
 
   --mus-radius: 12px;
   --mus-ease: cubic-bezier(0.22, 0.75, 0.24, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --mus-tx-1: var(--nc-tx-1, #f2efe8);
-    --mus-tx-2: var(--nc-tx-2, #ddd8ce);
-    --mus-tx-3: #979186;
-    --mus-lk: var(--nc-lk-1, #3291ff);
+/* Night: a warm, low-lit evening gallery, never a black box — the same brief the
+   3D palette follows, so the chrome sits in the same room as the walls. */
+:root[data-museum-mode='night'],
+.mus-root.is-night {
+  --mus-tx-1: #ece7dc;
+  --mus-tx-2: #d5cfc2;
+  --mus-tx-3: #a9a397;
+  --mus-lk: #5fa8ff;
 
-    --mus-surface: rgba(18, 18, 21, 0.94);
-    --mus-surface-2: rgba(28, 28, 33, 0.92);
-    --mus-surface-3: rgba(40, 40, 46, 0.9);
-    --mus-line: rgba(240, 236, 228, 0.16);
-    --mus-line-soft: rgba(240, 236, 228, 0.08);
-    --mus-scrim: rgba(6, 6, 8, 0.6);
-    --mus-loader-bg: rgba(10, 10, 12, 0.97);
-    --mus-shadow: 0 18px 52px rgba(0, 0, 0, 0.6);
-    --mus-shadow-sm: 0 6px 20px rgba(0, 0, 0, 0.5);
-    --mus-on-ink: #0c0c0e;
-    --mus-stick-bg: rgba(240, 236, 228, 0.09);
-    --mus-stick-knob: rgba(240, 236, 228, 0.34);
-  }
+  --mus-surface: rgba(33, 31, 28, 0.93);
+  --mus-surface-2: rgba(46, 43, 39, 0.92);
+  --mus-surface-3: rgba(60, 56, 50, 0.9);
+  --mus-line: rgba(236, 231, 220, 0.18);
+  --mus-line-soft: rgba(236, 231, 220, 0.09);
+  --mus-scrim: rgba(18, 16, 14, 0.55);
+  --mus-loader-bg: rgba(24, 22, 19, 0.96);
+  --mus-shadow: 0 18px 52px rgba(0, 0, 0, 0.55);
+  --mus-shadow-sm: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --mus-on-ink: #17150f;
+  --mus-stick-bg: rgba(236, 231, 220, 0.1);
+  --mus-stick-knob: rgba(236, 231, 220, 0.34);
+  --mus-page-bg: #1c1a16;
+
+  --mus-accent-s: 58%;
+  --mus-accent-l: 70%;
+}
+
+/* ------------------------------------------------- page + boot screens (!) -- */
+/* museum.html paints the page background and the boot-error card from its own
+ * <style>, prefers-color-scheme branches included, and that file is owned
+ * elsewhere. An attribute selector on :root outranks its bare `html, body`
+ * (0,0,1) and `#boot-error` (1,0,0) rules whichever stylesheet comes last, so
+ * the page follows the museum's mode instead of the OS.
+ *
+ * `:not([data-museum-mode='night'])` is the day case *and* the not-yet-stamped
+ * case on purpose: if main.js never loads, ui.js never stamps anything, and the
+ * error card still has to match the day default the museum ships with.
+ */
+
+:root:not([data-museum-mode='night']),
+:root:not([data-museum-mode='night']) body,
+:root[data-museum-mode='night'],
+:root[data-museum-mode='night'] body {
+  background: var(--mus-page-bg);
+}
+
+:root:not([data-museum-mode='night']) #boot-error,
+:root:not([data-museum-mode='night']) #no-webgl,
+:root[data-museum-mode='night'] #boot-error,
+:root[data-museum-mode='night'] #no-webgl {
+  background: var(--mus-page-bg);
+  color: var(--mus-tx-2);
+}
+
+:root:not([data-museum-mode='night']) #boot-detail,
+:root[data-museum-mode='night'] #boot-detail {
+  background: var(--mus-surface-2);
+  border-color: var(--mus-line);
+  color: var(--mus-tx-2);
+}
+
+:root:not([data-museum-mode='night']) #boot-error a,
+:root:not([data-museum-mode='night']) #no-webgl a,
+:root[data-museum-mode='night'] #boot-error a,
+:root[data-museum-mode='night'] #no-webgl a {
+  color: var(--mus-lk);
 }
 
 /* ------------------------------------------------------------------ root -- */
@@ -73,6 +152,14 @@
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+
+  /* --mus-accent has to be composed *here*, on the element setRoom() writes the
+     hue to. An unregistered custom property is substituted where it is
+     declared, so composing it on :root would freeze whatever hue :root had.
+     The transition is the accent sliding from room to room; the reduced-motion
+     block at the bottom of this file cancels it along with everything else. */
+  --mus-accent: hsl(var(--mus-accent-h) var(--mus-accent-s) var(--mus-accent-l));
+  transition: --mus-accent-h 0.55s var(--mus-ease);
 }
 
 .mus-root [hidden] {
@@ -85,14 +172,21 @@
   pointer-events: auto;
 }
 
-.mus-root button,
-.mus-root a {
+/* The type selector goes inside :where() so this reset weighs the same as a
+   single class (0,1,0) instead of out-ranking one. `.mus-root button` is
+   (0,1,1), which beats every component class below it — the reset was quietly
+   stripping the padding, border and background off .mus-enter, .mus-hud-btn,
+   .mus-prompt-btn and both close buttons, and flattening .mus-reader-link's
+   colour to inherit. At (0,1,0) it still out-ranks a bare `button {}` from any
+   base stylesheet, but loses to the component rules, which come later. */
+.mus-root :where(button),
+.mus-root :where(a) {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
 }
 
-.mus-root button {
+.mus-root :where(button) {
   border: 0;
   background: none;
   padding: 0;
@@ -260,6 +354,20 @@
   font-size: 0.9rem;
 }
 
+/* "Enter the museum" and the day/night switch share a row: the lighting is a
+   decision worth making before you walk in, not one buried in the HUD. */
+.mus-loader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 2.4rem;
+}
+
+.mus-loader-actions .mus-enter {
+  margin-top: 0;
+}
+
 .mus-enter {
   margin-top: 2.4rem;
   padding: 0.85rem 1.7rem;
@@ -344,7 +452,7 @@
   gap: 0.7rem;
   max-width: min(30rem, 88vw);
   padding: 0.55rem 0.9rem;
-  border: 1px solid var(--mus-line);
+  border: 1px solid color-mix(in srgb, var(--mus-accent) 34%, var(--mus-line));
   border-radius: 999px;
   background: var(--mus-surface);
   box-shadow: var(--mus-shadow-sm);
@@ -366,7 +474,7 @@
   font-size: 0.64rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--mus-tx-3);
+  color: var(--mus-accent);
 }
 
 .mus-prompt-title {
@@ -411,7 +519,7 @@
   left: clamp(1rem, 3vw, 2rem);
   max-width: min(20rem, 60vw);
   padding-left: 0.85rem;
-  border-left: 2px solid var(--mus-line);
+  border-left: 2px solid var(--mus-accent);
   opacity: 0;
   transition: opacity 0.4s var(--mus-ease);
 }
@@ -454,7 +562,7 @@
   font-family: var(--mus-mono);
   font-size: 0.68rem;
   letter-spacing: 0.18em;
-  color: var(--mus-tx-3);
+  color: var(--mus-accent);
 }
 
 .mus-plate-title {
@@ -485,11 +593,18 @@
   align-items: flex-end;
   gap: 0.5rem;
   opacity: 0;
-  transition: opacity 0.4s var(--mus-ease);
+  /* visibility, not just opacity: the HUD holds three real buttons, and an
+     opacity-0 button is still in the tab order — you could Tab off the loader
+     into an invisible day/night switch. It steps to visible the moment the
+     transition starts and back to hidden only at the end, so the fade is
+     unchanged. */
+  visibility: hidden;
+  transition: opacity 0.4s var(--mus-ease), visibility 0.4s var(--mus-ease);
 }
 
 .mus-root.is-entered .mus-hud {
   opacity: 1;
+  visibility: visible;
 }
 
 .mus-root.is-reading .mus-hud {
@@ -525,6 +640,67 @@
 .mus-hud-exit {
   font-size: 0.78rem;
   color: var(--mus-tx-3);
+}
+
+/* --------------------------------------------------------- day/night switch */
+/* This control throws the page away and starts again — walls, lights and fog
+   are baked from the palette when the world is built — so it is deliberately
+   wordier than the rest of the HUD: a glyph, the mode you are in, and, where
+   there is room for it, the fact that choosing reloads. */
+
+.mus-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  pointer-events: auto;
+}
+
+.mus-mode-glyph {
+  /* inline-block because transform does nothing to a bare inline box */
+  display: inline-block;
+  font-size: 1em;
+  line-height: 1;
+  color: var(--mus-accent);
+  transition: transform 0.35s var(--mus-ease);
+}
+
+.mus-mode:hover .mus-mode-glyph,
+.mus-mode:focus-visible .mus-mode-glyph {
+  transform: rotate(-22deg);
+}
+
+.mus-mode-label {
+  letter-spacing: 0.01em;
+}
+
+.mus-mode-hint {
+  font-family: var(--mus-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mus-tx-3);
+}
+
+/* the click has landed and the reload is on its way */
+.mus-mode[aria-busy='true'] {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.mus-mode-loader {
+  padding: 0.72rem 1.15rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 999px;
+  background: var(--mus-surface-2);
+  color: var(--mus-tx-2);
+  font-size: 0.88rem;
+  transition: background-color 0.18s var(--mus-ease), border-color 0.18s var(--mus-ease);
+}
+
+.mus-mode-loader:hover,
+.mus-mode-loader:focus {
+  background: var(--mus-surface-3);
+  border-color: var(--mus-tx-3);
 }
 
 /* --------------------------------------------------------------- room map */
@@ -638,11 +814,12 @@
 
 .mus-map-item.is-current {
   background: var(--mus-surface-3);
+  box-shadow: inset 2px 0 0 var(--mus-accent);
 }
 
 .mus-map-item.is-current .mus-map-num,
 .mus-map-item.is-current .mus-map-name {
-  color: var(--mus-lk);
+  color: var(--mus-accent);
 }
 
 .mus-map-hint {
@@ -1140,9 +1317,19 @@
     max-width: 62vw;
   }
 
+  /* three pills across the top of a phone is a squeeze: let them wrap rather
+     than push the room map button off the edge */
   .mus-hud {
     flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
+    max-width: 50vw;
+  }
+
+  .mus-hud-btn {
+    padding: 0.38rem 0.64rem;
+    font-size: 0.78rem;
   }
 
   .mus-prompt {
@@ -1162,13 +1349,17 @@
     padding-top: 0.9rem;
   }
 
-  .mus-enter {
+  .mus-enter,
+  .mus-loader-actions {
     margin-top: 1.4rem;
   }
 }
 
 /* --------------------------------------------------------- reduced motion */
 
+/* This also stops the per-room accent from sliding: --mus-accent-h is
+   transitioned on .mus-root, so zeroing that element's transition-duration
+   makes the hue change land in one step. */
 @media (prefers-reduced-motion: reduce) {
   .mus-root *,
   .mus-root,

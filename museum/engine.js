@@ -1,4 +1,8 @@
-// engine.js — renderer, scene, camera, lights and the render loop.
+// engine.js — renderer, scene, camera and the render loop.
+//
+// Lighting lives in lighting.js; this file owns the frame. The split is worth
+// it because the rig is per-room state with its own transitions, while
+// everything here is global and stateless between frames.
 //
 // Performance strategy:
 //   * no shadow maps at all; depth comes from fog + baked-ish vertex tinting
@@ -11,6 +15,7 @@
 
 import * as THREE from 'three';
 import { PALETTE, TUNING, DIMS, roomIndexAtZ, roomCenterZ } from './config.js';
+import { createLighting } from './lighting.js';
 
 export function createEngine(canvas) {
   const renderer = new THREE.WebGLRenderer({
@@ -27,6 +32,9 @@ export function createEngine(canvas) {
   renderer.info.autoReset = false;
 
   const scene = new THREE.Scene();
+  // Neutral starting values; the lighting rig owns these colours from its first
+  // frame and re-lerps them per room. The distances stay here — they are the
+  // engine's contract with the cull radius, not a per-room look.
   scene.background = new THREE.Color(PALETTE.bg);
   scene.fog = new THREE.Fog(PALETTE.fog, TUNING.fogNear, TUNING.fogFar);
 
@@ -40,20 +48,11 @@ export function createEngine(canvas) {
   camera.position.set(0, DIMS.eyeH, -1.8);
   camera.rotation.order = 'YXZ';
 
-  // --- lighting: three cheap lights, no shadows -----------------------------
-  const hemi = new THREE.HemisphereLight(PALETTE.ceiling, PALETTE.floor, 2.15);
-  scene.add(hemi);
-
-  const ambient = new THREE.AmbientLight(PALETTE.wall, 0.55);
-  scene.add(ambient);
-
-  // A single directional light that follows the player, so every room reads the
-  // same without needing per-room lights.
-  const key = new THREE.DirectionalLight(PALETTE.glow, 1.05);
-  key.position.set(3, 8, 2);
-  key.castShadow = false;
-  scene.add(key);
-  scene.add(key.target);
+  // --- lighting --------------------------------------------------------------
+  // A fixed rig of four shadowless lights, retinted per room. The engine's only
+  // jobs are to hand it the camera each frame and to tell it when the room
+  // changes; the values, the tints and the cross-fade are lighting.js's.
+  const lighting = createLighting(scene, camera, renderer);
 
   // --- adaptive resolution ---------------------------------------------------
   const maxDPR = Math.min(devicePixelRatio || 1, TUNING.maxDPR);
@@ -107,6 +106,10 @@ export function createEngine(canvas) {
       const g = roomGroups[i];
       if (g) g.visible = Math.abs(i - idx) <= r;
     }
+    // Retint on exactly the frames the visible set changes — including the
+    // forced cull after a teleport, which the loop below would never see.
+    // setRoom() is a no-op when the room is unchanged.
+    lighting.setRoom(idx);
     return idx;
   }
 
@@ -133,12 +136,9 @@ export function createEngine(canvas) {
 
     for (const fn of updaters) fn(dt, elapsed);
 
-    // key light rides along with the camera so lighting is room-independent
-    key.position.set(camera.position.x + 3, 8, camera.position.z + 3);
-    key.target.position.set(camera.position.x, 0, camera.position.z - 4);
-    key.target.updateMatrixWorld();
-
+    // cull first so a room change starts its cross-fade on the same frame
     stats.room = cull() ?? stats.room;
+    lighting.update(dt, camera);
 
     renderer.render(scene, camera);
 
@@ -171,6 +171,7 @@ export function createEngine(canvas) {
   function dispose() {
     stop();
     removeEventListener('resize', onResize);
+    lighting.dispose();
     renderer.dispose();
   }
 

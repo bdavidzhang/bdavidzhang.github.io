@@ -5,7 +5,9 @@
 //   * every static surface in a room is baked into world space and merged, so a
 //     room is 6 draw calls total: walls, floor, ceiling, skirting, light strip,
 //     outlines. Adding rooms costs draw calls linearly, not per surface.
-//   * materials are created once per build and shared by every room.
+//   * materials are shared per THEME, not per room: the six themes in config.js
+//     cost six material sets however many rooms use them, and two rooms with the
+//     same theme render from the same materials.
 //   * the drei-style <Edges threshold={15}> look is reproduced with
 //     EdgesGeometry, merged per room into a single LineSegments.
 //
@@ -14,10 +16,19 @@
 // on its own side. That way the *visible face* of every wall you can possibly
 // see always belongs to a room that is currently drawn — no holes when you look
 // through two doorways at once — and no two coplanar meshes ever z-fight.
+//
+// Now that adjacent rooms carry different themes, each half of a divider is
+// coloured by the room that owns it, so the threshold is where the material
+// changes. The halves meet at the boundary plane but do not overlap: the two
+// faces that touch there are back to back, one of them is always the far side of
+// a solid slab, and both materials cull back faces — so the seam is a colour
+// change, never z-fighting. The two halves do emit coincident *outline* segments
+// on that plane; harmless while every theme shares one ink, but give themes
+// distinct ink colours and those lines will need one side suppressed.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PALETTE, DIMS, roomZRange, roomCenterZ } from './config.js';
+import { DIMS, THEMES, themeFor, roomZRange, roomCenterZ } from './config.js';
 
 const EDGE_ANGLE = 15;        // matches drei's <Edges threshold={15}>
 const FACE_OFFSET = 0.02;     // anchors float this far proud of the wall face,
@@ -84,20 +95,65 @@ function makeGrainTexture() {
   return tex;
 }
 
-function createMaterials() {
-  const grain = makeGrainTexture();
+/** The seven shell materials for one theme. `grain` is shared by every theme —
+ *  the noise is white and each floor material tints it, so themes cost no VRAM. */
+function createThemeMaterials(theme, grain) {
   const lambert = (color, extra) =>
     new THREE.MeshLambertMaterial(Object.assign({ color }, extra));
 
   return {
-    wall:    lambert(PALETTE.wall),
-    wallAlt: lambert(PALETTE.wallAlt),
-    ceiling: lambert(PALETTE.ceiling),
-    floor:   lambert(PALETTE.floor, grain ? { map: grain } : null),
-    rail:    lambert(PALETTE.rail),
-    glow:    new THREE.MeshBasicMaterial({ color: PALETTE.glow }),
-    ink:     new THREE.LineBasicMaterial({ color: PALETTE.ink }),
+    wall:    lambert(theme.wall),
+    wallAlt: lambert(theme.wallAlt),
+    ceiling: lambert(theme.ceiling),
+    floor:   lambert(theme.floor, grain ? { map: grain } : null),
+    rail:    lambert(theme.rail),
+    glow:    new THREE.MeshBasicMaterial({ color: theme.glow }),
+    // outlines are keyed to the room's own ink so they stay legible against its
+    // walls whether the museum is in day or night mode
+    ink:     new THREE.LineBasicMaterial({ color: theme.ink }),
   };
+}
+
+/**
+ * Lazily builds one material set per theme name. Six themes therefore produce
+ * six sets no matter how many rooms exist, and rooms sharing a theme share
+ * materials — which is what keeps the renderer batching them together.
+ */
+function createMaterialCache() {
+  const grain = makeGrainTexture();
+  const sets = new Map();
+
+  return {
+    get(name, theme) {
+      let set = sets.get(name);
+      if (!set) {
+        set = createThemeMaterials(theme, grain);
+        sets.set(name, set);
+      }
+      return set;
+    },
+    dispose() {
+      for (const set of sets.values()) {
+        for (const mat of Object.values(set)) mat.dispose();
+      }
+      if (grain) grain.dispose();   // one texture behind every floor material
+      sets.clear();
+    },
+  };
+}
+
+// Reverse lookup so a theme object resolved by any route still hits the cache
+// under a stable key.
+const THEME_NAMES = new Map(Object.entries(THEMES).map(([name, theme]) => [theme, name]));
+
+/**
+ * A room's theme. The room object wins over the index so buildWorld keeps
+ * working on room lists that didn't come straight out of config.ROOMS (the
+ * tests build their own).
+ */
+function themeOf(room, index) {
+  const theme = (room && THEMES[room.theme]) || themeFor(index);
+  return { name: THEME_NAMES.get(theme) || `room-${index}`, theme };
 }
 
 /** Merge a bucket of geometries into one static mesh, or null if empty. */
@@ -282,13 +338,13 @@ function buildColliders(count) {
 // ---------------------------------------------------------------------------
 
 /**
- * @param {Array<{id: string, exhibits: Array, accentHue: number}>} rooms
+ * @param {Array<{id: string, theme: string, exhibits: Array}>} rooms
  * @returns {{group: THREE.Group, colliders: Array, anchors: Map, roomGroups: Array, dispose: Function}}
  */
 export function buildWorld(rooms) {
   const list = Array.isArray(rooms) ? rooms : [];
   const count = list.length;
-  const materials = createMaterials();
+  const cache = createMaterialCache();
 
   const group = new THREE.Group();
   group.name = 'museum-architecture';
@@ -306,6 +362,8 @@ export function buildWorld(rooms) {
     const isLast = i === count - 1;
     const [zFar, zNear] = roomZRange(i);
     const cz = roomCenterZ(i);
+    const { name: themeName, theme } = themeOf(room, i);
+    const mats = cache.get(themeName, theme);
 
     const wallGeos = [];
     const floorGeos = [];
@@ -357,19 +415,25 @@ export function buildWorld(rooms) {
     put(glowGeos, slab(STRIP_W, roomD - 2 * STRIP_INSET, roomH - 0.02, cz, false));
 
     // --- merge -------------------------------------------------------------
-    const wallMat = i % 2 === 0 ? materials.wall : materials.wallAlt;
+    // Both wall tones come from this room's own theme. They alternate by room so
+    // that two neighbours sharing a theme still read as separate spaces; the
+    // alternative — splitting side walls from cross walls inside one room — would
+    // want a second wall mesh, and 6 draw calls per room is the budget.
+    const wallMat = i % 2 === 0 ? mats.wall : mats.wallAlt;
     const meshes = [
       mergedMesh(wallGeos, wallMat, 'walls'),
-      mergedMesh(floorGeos, materials.floor, 'floor'),
-      mergedMesh(ceilGeos, materials.ceiling, 'ceiling'),
-      mergedMesh(railGeos, materials.rail, 'skirting'),
-      mergedMesh(glowGeos, materials.glow, 'light'),
-      mergedOutline(edgeGeos, materials.ink, 'outline'),
+      mergedMesh(floorGeos, mats.floor, 'floor'),
+      mergedMesh(ceilGeos, mats.ceiling, 'ceiling'),
+      mergedMesh(railGeos, mats.rail, 'skirting'),
+      mergedMesh(glowGeos, mats.glow, 'light'),
+      mergedOutline(edgeGeos, mats.ink, 'outline'),
     ];
 
     const roomGroup = new THREE.Group();
     roomGroup.name = `room-${room.id || i}`;
     roomGroup.userData.roomIndex = i;
+    roomGroup.userData.theme = theme;
+    roomGroup.userData.themeName = themeName;
     roomGroup.matrixAutoUpdate = false;
     roomGroup.updateMatrix();
 
@@ -394,11 +458,7 @@ export function buildWorld(rooms) {
     group.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
     });
-    for (const key of Object.keys(materials)) {
-      const mat = materials[key];
-      if (mat.map) mat.map.dispose();
-      mat.dispose();
-    }
+    cache.dispose();
     for (const rg of roomGroups) rg.clear();
     group.clear();
     if (group.parent) group.parent.remove(group);

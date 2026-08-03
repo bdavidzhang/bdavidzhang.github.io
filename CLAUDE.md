@@ -114,18 +114,37 @@ through an `<script type="importmap">` in `museum.html`.
 ```
 museum.html              # entry: import map, canvas, WebGL/no-JS fallbacks to index.html
 museum/
-├── config.js            # SINGLE SOURCE OF TRUTH — palette, DIMS, ROOMS, TUNING
+├── config.js            # SINGLE SOURCE OF TRUTH — THEMES, MODE, DIMS, ROOMS, TUNING
 ├── content.js           # fetches the existing *.json, normalises to one Exhibit shape
-├── engine.js            # renderer, lights, RAF loop, adaptive DPR, per-room culling
-├── architecture.js      # room shells, doorways, merged geometry, edge outlines, colliders
+├── engine.js            # renderer, RAF loop, adaptive DPR, per-room culling
+├── lighting.js          # the 4-light rig, retinted + cross-faded per room
+├── architecture.js      # room shells, doorways, merged geometry, outlines, colliders
+├── decor.js             # prop framework + ctx toolkit; dispatches to themes/
+├── themes/*.js          # one file per room character (garden, lab, study, chalk, …)
 ├── exhibits.js          # framed plates, canvas-texture labels, raycast targets
 ├── controls.js          # pointer-lock WASD, circle-vs-AABB collision, touch, keyboard-only
-├── ui.js                # DOM overlay: loader, reader panel, room map, perf readout
-├── museum.css           # overlay styles, reuses --nc-* tokens, light + dark
+├── ui.js                # DOM overlay: loader, reader panel, room map, day/night, perf
+├── museum.css           # overlay styles; day is default, night via [data-museum-mode]
 ├── smoke-test.mjs       # headless contract tests — `node museum/smoke-test.mjs`
+├── integration-test.mjs # builds the real museum from real JSON, counts draw calls
 ├── vendor/              # three.module.min.js + BufferGeometryUtils
 └── tex/                 # downscaled 256px portraits (assets/*.png are 1.9–6.5 MB, too big)
 ```
+
+**Day/night is NOT prefers-color-scheme.** The museum defaults to `day` for
+everyone and remembers an explicit choice in `localStorage['museum-mode']`.
+This is deliberate: the first version inherited OS dark mode and rendered walls
+at `#1b1b1f`, and because Lambert shades as `albedo × light`, near-black walls
+cannot be lit — the room just reads as gloomy. Night now uses mid-grey walls.
+The same trap bites one level up in `lighting.js`: tinting a light with a dark
+theme colour multiplies its intensity by that colour's lightness, so tints are
+normalised to hue and intensity alone carries energy. Do not reintroduce a
+`prefers-color-scheme` branch anywhere in the museum.
+
+**Adding or changing a room's character:** edit its `theme` in `ROOMS`, or add a
+`THEME_DEFS` entry plus a `themes/<name>.js` exporting `<name>(ctx)`. Themes get
+a toolkit (`ctx.instanced`, `ctx.merged`, `ctx.mat`, `ctx.collide`, …) and must
+use `ctx.rng()` rather than `Math.random()` so props land identically each load.
 
 **Rooms are data.** Add or reorder entries in `ROOMS` in `config.js`; geometry,
 colliders, anchors, the map UI and `#hash` deep links all follow automatically.

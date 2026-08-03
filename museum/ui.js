@@ -9,10 +9,15 @@
 // <canvas id="scene">. Exactly one element is appended to the document
 // (.mus-root); everything else lives inside it. Styling is museum.css.
 //
+// It also stamps the museum's day/night mode onto <html> as data-museum-mode
+// (and onto .mus-root as .is-night), which is the one thing it touches outside
+// its own subtree — the page background and the boot screens are painted by
+// museum.html and have to follow the same choice.
+//
 // Keys consumed here: M (room map), ` (perf readout), Esc (close reader/map).
 // E / Enter deliberately belong to main.js.
 
-import { ROOMS } from './config.js';
+import { ROOMS, MODE, isNight, setMode, themeFor } from './config.js';
 
 // museum.html sits at the site root, but resolving through import.meta.url means
 // the reader's links keep working even if it is ever moved into /museum/.
@@ -44,6 +49,14 @@ const LEGEND_DESKTOP = [
   ['M', 'room map — jump anywhere'],
   ['Esc', 'release the cursor'],
 ];
+
+// The day/night switch names the mode you are *in*, not the one you would get:
+// after a reload the visitor needs to be told where they landed. The sentence
+// pressing it triggers lives in the aria-label instead.
+const MODE_FACE = {
+  day: { glyph: '☀', label: 'Day' },
+  night: { glyph: '☾', label: 'Night' },
+};
 
 const LEGEND_TOUCH = [
   ['Stick', 'the pad at bottom-left walks you'],
@@ -170,6 +183,61 @@ export function createUI({ isMobile = false } = {}) {
   root.id = 'museum-ui';
   if (touch) root.classList.add('is-touch');
 
+  // The mode is the visitor's explicit, remembered choice (config.js), never the
+  // OS's. Stamp it twice: the class drives every --mus-* token in this overlay,
+  // the attribute lets the page-level styles museum.html owns follow along, so
+  // the chrome can never end up dark over a daylit room.
+  if (isNight) root.classList.add('is-night');
+  document.documentElement.setAttribute('data-museum-mode', MODE);
+
+  // ==========================================================================
+  // 0 — day / night switch
+  // ==========================================================================
+  // Two of these exist: one on the loader, so the lighting can be chosen before
+  // walking in, and one in the HUD next to the room map.
+
+  const modeButtons = [];
+
+  function makeModeToggle(className, withHint) {
+    const btn = el('button', className);
+    btn.type = 'button';
+
+    const face = MODE_FACE[MODE] || MODE_FACE.day;
+    const glyph = el('span', 'mus-mode-glyph', face.glyph);
+    glyph.setAttribute('aria-hidden', 'true'); // decorative — the label carries it
+    btn.append(glyph, el('span', 'mus-mode-label', face.label));
+    if (withHint) btn.appendChild(el('span', 'mus-mode-hint', 'reloads'));
+
+    btn.setAttribute('aria-pressed', isNight ? 'true' : 'false');
+    // A control that throws the page away has to say so before it is pressed.
+    btn.setAttribute(
+      'aria-label',
+      `Lighting: ${MODE}. Switch to ${isNight ? 'day' : 'night'} — the museum reloads.`,
+    );
+    btn.title = `Switch to ${isNight ? 'day' : 'night'} lighting (reloads the museum)`;
+    btn.addEventListener('click', switchMode);
+
+    modeButtons.push(btn);
+    return btn;
+  }
+
+  function switchMode(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation(); // the loader treats a bare click as "enter"
+    }
+    const next = isNight ? 'day' : 'night';
+    setMode(next);
+    // Walls, lights and fog are baked out of the palette when the world is
+    // built, so restarting is the honest way to apply the choice — cheaper than
+    // rebuilding every three.js material for a preference toggled once.
+    for (const btn of modeButtons) {
+      btn.setAttribute('aria-pressed', next === 'night' ? 'true' : 'false');
+      btn.setAttribute('aria-busy', 'true');
+    }
+    location.reload();
+  }
+
   // ==========================================================================
   // 1 — loader
   // ==========================================================================
@@ -209,7 +277,9 @@ export function createUI({ isMobile = false } = {}) {
   const enterBtn = el('button', 'mus-enter', 'Enter the museum');
   enterBtn.type = 'button';
   enterBtn.disabled = true;
-  loaderInner.appendChild(enterBtn);
+  const loaderActions = el('div', 'mus-loader-actions');
+  loaderActions.append(enterBtn, makeModeToggle('mus-mode mus-mode-loader', true));
+  loaderInner.appendChild(loaderActions);
 
   const foot = el('p', 'mus-loader-foot');
   const plainLink = el('a', null, 'or read the plain site instead');
@@ -260,7 +330,7 @@ export function createUI({ isMobile = false } = {}) {
   mapBtn.append(document.createTextNode('Rooms'), el('kbd', null, 'M'));
   const exitLink = el('a', 'mus-hud-btn mus-hud-exit', 'Plain site');
   exitLink.href = resolveHref('index.html');
-  hud.append(mapBtn, exitLink);
+  hud.append(mapBtn, makeModeToggle('mus-hud-btn mus-mode', false), exitLink);
   root.appendChild(hud);
 
   // ==========================================================================
@@ -441,7 +511,8 @@ export function createUI({ isMobile = false } = {}) {
   enterBtn.addEventListener('click', enterMuseum);
   loader.addEventListener('click', (e) => {
     if (enterBtn.disabled) return;
-    if (e.target instanceof Element && e.target.closest('a')) return;
+    // links and the day/night switch are their own actions, not "enter"
+    if (e.target instanceof Element && e.target.closest('a, .mus-mode')) return;
     enterMuseum();
   });
 
@@ -474,6 +545,13 @@ export function createUI({ isMobile = false } = {}) {
     const idx = Number.isFinite(index) ? index : 0;
     const info = room || ROOMS[idx] || {};
     currentRoom = idx;
+    // Every room carries an accentHue, so the nameplate, the focus prompt and
+    // the map's "you are here" belong to the room you are standing in. Only the
+    // hue moves; museum.css registers it with @property, so it slides between
+    // rooms instead of snapping (and stops sliding under reduced motion).
+    const hue = themeFor(idx).accentHue;
+    if (Number.isFinite(hue)) root.style.setProperty('--mus-accent-h', String(hue));
+
     plateIndex.textContent = `${pad2(idx)} / ${pad2(ROOMS.length - 1)}`;
     plateTitle.textContent = info.title || '';
     plateSub.textContent = info.subtitle || '';

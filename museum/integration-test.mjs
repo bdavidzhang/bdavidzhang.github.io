@@ -21,6 +21,7 @@ globalThis.fetch = async (url) => {
 const { loadContent } = await import('./content.js');
 const { buildWorld } = await import('./architecture.js');
 const { buildExhibits } = await import('./exhibits.js');
+const { buildDecor } = await import('./decor.js');
 const { TUNING, DIMS } = await import('./config.js');
 
 const rooms = await loadContent();
@@ -42,15 +43,20 @@ if (empty.length) console.log(`  WARNING: empty rooms — ${empty.map((r) => r.i
 
 console.log('\n=== build ===');
 const world = buildWorld(rooms);
+const decor = buildDecor(rooms, world);
 const exhibits = buildExhibits(rooms, world);
 
+for (const b of decor.built) console.log(`  decor ${b.room.padEnd(12)} ${b.theme.padEnd(9)} ${b.meshes} nodes`);
+const unthemed = rooms.filter((r) => !decor.built.some((b) => b.room === r.id));
+if (unthemed.length) console.log(`  NOTE: no decor for ${unthemed.map((r) => r.id).join(', ')}`);
+console.log(`  decor colliders: ${decor.colliders.length}`);
 console.log(`  colliders:       ${world.colliders.length}`);
 console.log(`  raycast targets: ${exhibits.targets.length} (expected ${total})`);
 if (exhibits.targets.length !== total) console.log('  !! target count mismatch');
 
 // Count what a single frame would submit, honouring the engine's cull radius.
 const scene = new THREE.Scene();
-scene.add(world.group, exhibits.group);
+scene.add(world.group, decor.group, exhibits.group);
 
 // three.js honours ancestor visibility at render time, so a child's own
 // .visible flag is not enough — walk up to the root.
@@ -110,15 +116,17 @@ console.log('\n=== update loop ===');
 const cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 140);
 cam.position.set(0, DIMS.eyeH, -2);
 const before = process.memoryUsage().heapUsed;
-for (let i = 0; i < 2000; i++) exhibits.update(1 / 60, cam, i % 3 === 0 ? exhibits.targets[0] : null);
+for (let i = 0; i < 2000; i++) { decor.update(1 / 60, i / 60); exhibits.update(1 / 60, cam, i % 3 === 0 ? exhibits.targets[0] : null); }
 global.gc?.();
 const after = process.memoryUsage().heapUsed;
 console.log(`  2000 frames: heap ${(before / 1048576).toFixed(1)} -> ${(after / 1048576).toFixed(1)} MB`);
 
-const targetCount = exhibits.targets.length;   // capture before dispose clears it
+const targetCount = exhibits.targets.length;
+const decorNodes = decor.built.reduce((n, b) => n + b.meshes, 0);   // capture before dispose clears it
 
 console.log('\n=== dispose ===');
 exhibits.dispose();
+decor.dispose();
 world.dispose();
 console.log('  disposed without throwing');
 

@@ -6,6 +6,7 @@ import { createEngine } from './engine.js';
 import { loadContent } from './content.js';
 import { buildWorld } from './architecture.js';
 import { buildExhibits } from './exhibits.js';
+import { buildDecor } from './decor.js';
 import { createControls } from './controls.js';
 import { createUI } from './ui.js';
 import { ROOMS, TUNING, DIMS, roomCenterZ, roomIndexAtZ } from './config.js';
@@ -25,7 +26,13 @@ async function boot() {
   engine.scene.add(world.group);
   engine.setRoomGroups(world.roomGroups);
 
-  ui.setProgress(0.65, 'Hanging exhibits');
+  ui.setProgress(0.6, 'Furnishing rooms');
+  // decor: { group, colliders[], built[], update(dt, elapsed), dispose() }
+  // Props are parented into the room groups, so per-room culling still applies.
+  const decor = buildDecor(rooms, world);
+  engine.scene.add(decor.group);
+
+  ui.setProgress(0.75, 'Hanging exhibits');
   // exhibits: { group, targets[], update(dt, camera), dispose() }
   const exhibits = buildExhibits(rooms, world);
   engine.scene.add(exhibits.group);
@@ -35,7 +42,8 @@ async function boot() {
   const controls = createControls({
     camera: engine.camera,
     domElement: canvas,
-    colliders: world.colliders,
+    // props are solid too, so the player walks around planters and desks
+    colliders: world.colliders.concat(decor.colliders),
     isMobile: engine.isMobile,
   });
 
@@ -89,6 +97,7 @@ async function boot() {
 
   engine.onFrame((dt, elapsed) => {
     controls.update(dt);
+    decor.update(dt, elapsed);
     exhibits.update(dt, engine.camera, focused && focused.object);
 
     // raycast at ~20Hz rather than every frame; it is never the bottleneck but
@@ -121,7 +130,7 @@ async function boot() {
   ui.onEnter(() => { if (!engine.isMobile) controls.lock(); });
 
   // expose for debugging / the perf overlay
-  window.__museum = { engine, world, exhibits, controls, ui, rooms };
+  window.__museum = { engine, world, decor, exhibits, controls, ui, rooms };
 }
 
 boot().catch((err) => {

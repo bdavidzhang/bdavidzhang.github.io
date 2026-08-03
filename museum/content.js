@@ -5,7 +5,7 @@
 //   id, kind, title, meta, blurb, tags[], href?, bodyHtml?, external?, image?
 // }
 
-import { ROOMS } from './config.js';
+import { ROOMS, THEMES } from './config.js';
 
 const BASE = new URL('../', import.meta.url); // site root, museum.html lives there
 
@@ -178,10 +178,17 @@ export async function loadContent() {
     podcast:      fromPodcast(podcast),
   };
 
-  return ROOMS.map((room) => ({
-    ...room,
-    exhibits: bySource[room.source] || [],
-  }));
+  // accentHue lives on the theme now, but exhibits.js and the UI read it off
+  // the room, so resolve it here rather than making every consumer look it up.
+  return ROOMS.map((room) => {
+    const theme = THEMES[room.theme] || {};
+    return {
+      ...room,
+      accentHue: theme.accentHue ?? 210,
+      palette: theme,
+      exhibits: bySource[room.source] || [],
+    };
+  });
 }
 
 export { excerpt };

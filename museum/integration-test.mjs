@@ -43,7 +43,18 @@ if (empty.length) console.log(`  WARNING: empty rooms — ${empty.map((r) => r.i
 
 console.log('\n=== build ===');
 const world = buildWorld(rooms);
+
+// snapshot the shell so the clearance check below can tell decor from architecture
+const shellNodes = new Set();
+world.roomGroups.forEach((g) => g && g.traverse((o) => shellNodes.add(o)));
+
 const decor = buildDecor(rooms, world);
+
+// Anything now in a room group that wasn't part of the shell is decor. Captured
+// BEFORE buildExhibits so the plates themselves are never mistaken for props.
+const decorNodes = new Set();
+world.roomGroups.forEach((g) => g && g.traverse((o) => { if (!shellNodes.has(o)) decorNodes.add(o); }));
+
 const exhibits = buildExhibits(rooms, world);
 
 for (const b of decor.built) console.log(`  decor ${b.room.padEnd(12)} ${b.theme.padEnd(9)} ${b.meshes} nodes`);
@@ -112,6 +123,89 @@ scene.traverse((o) => {
 });
 console.log(`  texture VRAM:    ~${(bytes / 1048576).toFixed(1)} MB across ${seen.size} textures`);
 
+// --- do any props cover the artwork? ----------------------------------------
+// Themes place shelving and panels around the exhibit plates, and the plate
+// positions come from the content — so adding one essay reflows the anchors and
+// could push a bookcase over a plate. This is the guard for that.
+//
+// Granularity was chosen the hard way. Whole-mesh boxes over-report (a merged
+// prop or the room shell spans the room by construction). Per-vertex UNDER-
+// reports, and precisely on the case that matters: a panel straddling a plate
+// has every corner outside it. So the unit is the triangle, transformed into
+// world space through the per-instance matrix where there is one.
+console.log('\n=== prop / plate clearance ===');
+const vtx = new THREE.Vector3();
+const wm = new THREE.Matrix4();
+const tri = new THREE.Box3();
+const intrusions = [];
+
+rooms.forEach((room, i) => {
+  const group = world.roomGroups[i];
+  if (!group) return;
+  group.updateMatrixWorld(true);
+
+  const anchors = (world.anchors.get(room.id) || []).slice(0, room.exhibits.length);
+  if (!anchors.length) return;
+
+  // the volume a plate needs: its slot, plus 0.22m of clearance into the room
+  const plates = anchors.map((a, k) => {
+    const nx = Math.sin(a.rotationY);
+    const nz = Math.cos(a.rotationY);
+    const hw = a.width / 2;
+    const hh = a.height / 2;
+    const b = new THREE.Box3();
+    for (const d of [0, 0.22]) {
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          b.expandByPoint(vtx.set(
+            a.position.x + nx * d - nz * hw * sx,
+            a.position.y + hh * sy,
+            a.position.z + nz * d + nx * hw * sx,
+          ));
+        }
+      }
+    }
+    return { k, box: b };
+  });
+
+  group.traverse((node) => {
+    if (!decorNodes.has(node)) return;                 // shell or exhibit, not a prop
+    if (!(node.isMesh || node.isInstancedMesh)) return;
+    const pos = node.geometry && node.geometry.attributes && node.geometry.attributes.position;
+    if (!pos) return;
+    // Per-TRIANGLE AABBs, not per-vertex. A vertex test misses the case that
+    // matters most: a panel straddling a plate has every corner outside it.
+    // Whole-mesh boxes are useless in the other direction (a merged prop spans
+    // the room), so the triangle is the right granularity.
+    const idx = node.geometry.index;
+    const triCount = (idx ? idx.count : pos.count) / 3;
+    const n = node.isInstancedMesh ? node.count : 1;
+    for (let inst = 0; inst < n; inst++) {
+      if (node.isInstancedMesh) { node.getMatrixAt(inst, wm); wm.premultiply(node.matrixWorld); }
+      else wm.copy(node.matrixWorld);
+      for (let t = 0; t < triCount; t++) {
+        tri.makeEmpty();
+        for (let c = 0; c < 3; c++) {
+          const vi = idx ? idx.getX(t * 3 + c) : t * 3 + c;
+          tri.expandByPoint(vtx.fromBufferAttribute(pos, vi).applyMatrix4(wm));
+        }
+        for (const p of plates) {
+          if (p.box.intersectsBox(tri)) {
+            intrusions.push(`${room.id}: "${node.name || node.type}" over plate ${p.k}`);
+            return;
+          }
+        }
+      }
+    }
+  });
+});
+
+if (intrusions.length) {
+  for (const s of [...new Set(intrusions)]) console.log(`  !! ${s}`);
+} else {
+  console.log('  no prop intrudes on any exhibit plate');
+}
+
 console.log('\n=== update loop ===');
 const cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 140);
 cam.position.set(0, DIMS.eyeH, -2);
@@ -122,7 +216,6 @@ const after = process.memoryUsage().heapUsed;
 console.log(`  2000 frames: heap ${(before / 1048576).toFixed(1)} -> ${(after / 1048576).toFixed(1)} MB`);
 
 const targetCount = exhibits.targets.length;
-const decorNodes = decor.built.reduce((n, b) => n + b.meshes, 0);   // capture before dispose clears it
 
 console.log('\n=== dispose ===');
 exhibits.dispose();
@@ -135,6 +228,7 @@ if (targetCount !== total) problems.push('raycast target count mismatch');
 if (empty.length) problems.push(`empty rooms: ${empty.map((e) => e.id).join(', ')}`);
 if (worst > 120) problems.push(`${worst} drawables per frame is too many`);
 if (bytes / 1048576 > 40) problems.push(`${(bytes / 1048576).toFixed(1)} MB of textures is too much`);
+if (intrusions.length) problems.push(`${new Set(intrusions).size} prop(s) cover an exhibit plate`);
 
 console.log(problems.length ? `\nPROBLEMS:\n  - ${problems.join('\n  - ')}` : '\nAll integration checks clean.');
 process.exit(problems.length ? 1 : 0);

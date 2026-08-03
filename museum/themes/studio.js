@@ -51,28 +51,35 @@ export function studio(ctx) {
 
   // --- palette, derived so night mode follows automatically -----------------
   const probe = {};
-  new THREE.Color(theme.wall).getHSL(probe);
+  new THREE.Color(theme.wall).getHSL(probe, THREE.SRGBColorSpace);
   const night = probe.l < 0.5;
 
-  /** Recolour a theme tone: keep its lightness band, change its character. */
-  const tint = (hex, hue, sat, lMul) => {
+  /**
+   * Recolour a theme tone: keep its family, retarget its lightness. Worked in
+   * sRGB space so the multipliers mean what they look like, and given a value
+   * per mode because night wants props lighter than the wall, not darker —
+   * Lambert multiplies albedo by light, so a dark prop in a dim room is just
+   * black.
+   */
+  const tone = (hex, hue, sat, dayL, nightL) => {
     const c = new THREE.Color(hex);
     const o = {};
-    c.getHSL(o);
-    return c.setHSL(hue / 360, sat, Math.max(0.05, Math.min(0.94, o.l * lMul))).getHex();
+    c.getHSL(o, THREE.SRGBColorSpace);
+    const l = Math.max(0.05, Math.min(0.95, o.l * (night ? nightL : dayL)));
+    return c.setHSL(hue / 360, sat, l, THREE.SRGBColorSpace).getHex();
   };
 
-  const walnut   = ctx.mat(tint(theme.rail, 24, 0.36, night ? 0.82 : 0.54));
-  const feltA    = ctx.mat(tint(theme.wallAlt, 14, 0.15, night ? 1.08 : 0.80));
-  const feltB    = ctx.mat(tint(theme.wallAlt, 12, 0.23, night ? 0.84 : 0.63));
-  const hardware = ctx.mat(tint(theme.frame, 22, 0.07, night ? 0.72 : 1.55));
-  const shadeMat = ctx.mat(tint(theme.matte, 34, 0.15, night ? 1.05 : 0.97),
+  const walnut   = ctx.mat(tone(theme.rail, 24, 0.34, 0.64, 1.26));
+  const feltA    = ctx.mat(tone(theme.wallAlt, 14, 0.14, 0.84, 1.40));
+  const feltB    = ctx.mat(tone(theme.wallAlt, 12, 0.22, 0.68, 0.84));
+  const hardware = ctx.mat(tone(theme.frame, 22, 0.07, 1.70, 0.57));
+  const shadeMat = ctx.mat(tone(theme.glow, 34, 0.16, 0.96, 0.96),
     { side: THREE.DoubleSide });
-  const rugMat   = ctx.mat(tint(theme.rail, theme.accentHue, 0.26, night ? 0.96 : 0.80));
+  const rugMat   = ctx.mat(tone(theme.rail, theme.accentHue, 0.26, 0.83, 1.17));
   const glowMat  = ctx.glowMat(theme.glow);
   // Its own material: update() animates the opacity, so it must not be shared
   // with anything that expects a constant.
-  const onAirMat = ctx.glowMat(tint(theme.glow, 8, 0.62, night ? 1.0 : 0.76),
+  const onAirMat = ctx.glowMat(tone(theme.glow, 8, 0.62, 0.80, 1.00),
     { transparent: true, opacity: 0.9 });
 
   // =========================================================================
@@ -101,7 +108,7 @@ export function studio(ctx) {
   for (let c = 0; c < zCols; c++) {
     const z = zStart - c * colPitch;
     const lift = c % 2 ? 0.09 : -0.09;
-    for (const rowY of [3.03, 3.73]) {
+    for (const rowY of [3.09, 3.79]) {      // lowest possible edge: y 2.71
       if (rng() > 0.16) panel(-HALF_W + STANDOFF, rowY + lift, z, Math.PI / 2);
       if (rng() > 0.16) panel(HALF_W - STANDOFF, rowY + lift, z, -Math.PI / 2);
     }
@@ -110,22 +117,25 @@ export function studio(ctx) {
   // end wall: a full grid, opened out around the doorway you leave by
   const endZ = bounds.minZ - HALF_T + STANDOFF;
   const DOOR_CLEAR = 2.6;                // ~1.15m of air either side of the gap
+  const xSpan = HALF_W - 0.45;
   for (let r = 0; r < 6; r++) {
     const y = 0.72 + r * 0.63;
     for (let c = 0; c < 16; c++) {
-      const x = -6.05 + c * 0.807;
+      const x = -xSpan + (c * 2 * xSpan) / 15;
       if (y < 3.4 && Math.abs(x) < DOOR_CLEAR) continue;
       if (rng() < 0.2) continue;
       panel(x, y + (c % 2 ? 0.07 : -0.07), endZ, 0);
     }
   }
 
-  meshes.push(ctx.instanced(panelGeo, feltA, panelsA));
-  meshes.push(ctx.instanced(panelGeo, feltB, panelsB));
+  for (const [batch, felt] of [[panelsA, feltA], [panelsB, feltB]]) {
+    if (batch.length) meshes.push(ctx.instanced(panelGeo, felt, batch));
+  }
 
   // =========================================================================
   // 2. the set — laid out in a local frame, then swung toward the corridor so
-  //    you see both speakers in three-quarter view as you walk past
+  //    you see both speakers in three-quarter view as you walk past. It sits
+  //    off to one side: the centre of the room stays a walkway.
   // =========================================================================
   const setX = 3.35;
   const setZ = bounds.centerZ;

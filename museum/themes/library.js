@@ -56,29 +56,39 @@ export function library(ctx) {
 
   // --- palette, derived so night mode follows automatically -----------------
   const probe = {};
-  new THREE.Color(theme.wall).getHSL(probe);
+  new THREE.Color(theme.wall).getHSL(probe, THREE.SRGBColorSpace);
   const night = probe.l < 0.5;
 
-  const tint = (hex, hue, sat, lMul) => {
+  /**
+   * Recolour a theme tone: keep its family, retarget its lightness. Worked in
+   * sRGB space so the multipliers mean what they look like, and given a value
+   * per mode because night wants props lighter than the wall, not darker —
+   * Lambert multiplies albedo by light, so a dark prop in a dim room is just
+   * black.
+   */
+  const tone = (hex, hue, sat, dayL, nightL) => {
     const c = new THREE.Color(hex);
     const o = {};
-    c.getHSL(o);
-    return c.setHSL(hue / 360, sat, Math.max(0.05, Math.min(0.94, o.l * lMul))).getHex();
+    c.getHSL(o, THREE.SRGBColorSpace);
+    const l = Math.max(0.05, Math.min(0.95, o.l * (night ? nightL : dayL)));
+    return c.setHSL(hue / 360, sat, l, THREE.SRGBColorSpace).getHex();
   };
 
-  const oak       = ctx.mat(tint(theme.rail, 34, 0.30, night ? 0.94 : 0.74));
-  const oakDark   = ctx.mat(tint(theme.rail, 30, 0.35, night ? 0.78 : 0.55));
-  const ironwork  = ctx.mat(tint(theme.frame, 34, 0.09, night ? 0.70 : 1.50));
-  const parchment = ctx.mat(tint(theme.matte, 40, 0.14, night ? 1.02 : 0.97),
+  const oak       = ctx.mat(tone(theme.rail, 34, 0.28, 0.91, 1.31));
+  const oakDark   = ctx.mat(tone(theme.rail, 30, 0.34, 0.68, 1.06));
+  const ironwork  = ctx.mat(tone(theme.frame, 34, 0.09, 1.70, 0.55));
+  const parchment = ctx.mat(tone(theme.glow, 40, 0.15, 0.91, 0.87),
     { side: THREE.DoubleSide });
-  const rugMat    = ctx.mat(tint(theme.rail, theme.accentHue, 0.24, night ? 0.96 : 0.78));
+  const rugMat    = ctx.mat(tone(theme.rail, theme.accentHue, 0.24, 0.83, 1.17));
   const glowMat   = ctx.glowMat(theme.glow);
   // Its own material: update() drifts the opacity like cloud passing the window.
-  const poolMat   = ctx.glowMat(tint(theme.glow, 46, 0.40, 1.0),
+  const poolMat   = ctx.glowMat(tone(theme.glow, 46, 0.40, 1.00, 1.00),
     { transparent: true, opacity: 0.2, depthWrite: false });
 
-  const bookMats = [[9, 0.34], [211, 0.20], [40, 0.38], [152, 0.21]]
-    .map(([hue, sat], i) => ctx.mat(tint(theme.rail, hue, sat, (night ? 0.92 : 0.78) + i * 0.04)));
+  // four spines, one instanced batch each — a hundred books is four draw calls
+  const bookMats = [[9, 0.34, 0.64, 1.14], [211, 0.20, 0.76, 1.31],
+    [40, 0.38, 0.88, 1.49], [152, 0.21, 0.52, 0.97]]
+    .map(([hue, sat, d, n]) => ctx.mat(tone(theme.rail, hue, sat, d, n)));
 
   // =========================================================================
   // 1. bookcases — carcasses merge, boards and books instance
@@ -166,7 +176,9 @@ export function library(ctx) {
 
   meshes.push(ctx.merged(caseGeos, oak));
   meshes.push(ctx.instanced(unit, oak, boards));
-  books.forEach((batch, i) => meshes.push(ctx.instanced(unit, bookMats[i], batch)));
+  books.forEach((batch, i) => {
+    if (batch.length) meshes.push(ctx.instanced(unit, bookMats[i], batch));
+  });
 
   // =========================================================================
   // 2. the window — dead centre on the end wall, between the two back plates
@@ -186,7 +198,8 @@ export function library(ctx) {
   meshes.push(ctx.plane(2.6, 3.6, poolMat,
     { x: 0, y: 0.02, z: backFace + 2.05, rx: -Math.PI / 2 }));
 
-  const furnitureGeos = [bx(2.90, 0.09, 0.20, 0, 0.955, backFace + 0.13)];   // sill
+  // sill: kept to the frame's width so it stays clear of the back plates
+  const furnitureGeos = [bx(2.72, 0.09, 0.20, 0, 0.955, backFace + 0.13)];
 
   // =========================================================================
   // 3. reading table, chairs, ladder, globe, pendant
@@ -226,7 +239,7 @@ export function library(ctx) {
   ladder.rotateZ(-0.24);
   const ladderX = HALF_W - CASE_D - 0.78;
   const ladderZ = bounds.centerZ + 1.30;
-  furnitureGeos.push(ladder.translate(ladderX, 0, ladderZ));
+  furnitureGeos.push(ladder.translate(ladderX, 0.008, ladderZ));   // lean lifts a heel
   ctx.collide(ladderX - 0.20, ladderX + 0.82, ladderZ - 0.35, ladderZ + 0.35);
 
   // globe on a turned stand — the room's one round thing

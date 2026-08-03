@@ -121,6 +121,11 @@ export function buildDecor(rooms, world) {
         doorW: DIMS.doorW,
         doorH: DIMS.doorH,
       },
+      // Where this room's exhibit plates actually land, so a theme can place
+      // shelving and panels around them instead of hardcoding coordinates that
+      // silently go stale the moment an essay is added.
+      anchors: (world.anchors.get(room.id) || []).slice(0, room.exhibits ? room.exhibits.length : 0),
+
       mat,
       glowMat,
 

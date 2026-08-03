@@ -126,6 +126,13 @@ async function boot() {
 
 boot().catch((err) => {
   console.error('[museum] boot failed', err);
-  const fallback = document.getElementById('boot-error');
-  if (fallback) fallback.hidden = false;
+  const box = document.getElementById('boot-error');
+  const reason = document.getElementById('boot-reason');
+  const detail = document.getElementById('boot-detail');
+  if (reason) reason.textContent = 'The museum started but failed while building the rooms.';
+  if (detail) {
+    detail.hidden = false;
+    detail.textContent = (err && (err.stack || err.message) || String(err)).slice(0, 900);
+  }
+  if (box) box.hidden = false;
 });

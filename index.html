@@ -1,910 +1,126 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>David Zhang</title>
-<meta name="description" content="Bocheng David Zhang - CS & Physics at UIUC. ML research, alignment, multi-agent systems.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>The Museum · David Zhang</title>
+<meta name="description" content="A walkable 3D museum of David Zhang's research, essays, mathematics and podcast.">
+
+<link rel="preload" href="museum/vendor/three.module.min.js" as="script" crossorigin>
+<link rel="stylesheet" href="inter.css">
+<link rel="stylesheet" href="museum/museum.css">
+
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@700;800&family=Inter:wght@300;400;500;600&display=swap');
+  /* Day is the default for everyone; museum.css owns the night override via
+     [data-museum-mode="night"], which ui.js stamps on <html>. Deliberately no
+     prefers-color-scheme here — the museum's mode is an explicit, remembered
+     choice, and an OS branch would fight it. */
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ede9e1; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* `display` here is an ID selector, which outranks the UA's
+     `[hidden] { display: none }`. Without this guard the error card renders
+     over the canvas unconditionally and the museum looks broken while it is
+     in fact running underneath. Keep the [hidden] rule adjacent to the rule
+     that necessitates it. */
+  #boot-error[hidden], #no-webgl[hidden] { display: none; }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  :root {
-    --bg: #0a0a0c;
-    --bg2: #101014;
-    --bg3: #161619;
-    --accent: #7fddaa;
-    --accent-dim: rgba(127,221,170,0.15);
-    --text: #e8ece9;
-    --text-dim: #6a7d70;
-    --text-muted: #444a46;
-    --border: #1e2120;
+  #boot-error, #no-webgl {
+    position: fixed; inset: 0; display: grid; place-content: center; gap: .75rem;
+    font-family: 'Inter', system-ui, sans-serif; text-align: center; padding: 2rem;
+    background: var(--nc-bg-1, #fff); color: var(--nc-tx-2, #1a1a1a); z-index: 999;
   }
-
-  html {
-    scroll-behavior: smooth;
+  #boot-error a, #no-webgl a { color: var(--nc-lk-1, #0070f3); }
+  #boot-error { max-width: 46rem; margin: 0 auto; }
+  #boot-error p { max-width: 40rem; line-height: 1.55; }
+  #boot-detail {
+    text-align: left; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, Consolas, monospace; font-size: .78rem; line-height: 1.5;
+    background: var(--nc-bg-2, #f6f8fa); border: 1px solid var(--nc-bg-3, #e5e7eb);
+    border-radius: 6px; padding: .9rem 1rem; max-height: 40vh; overflow: auto;
   }
-
-  body {
-    width: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', -apple-system, sans-serif;
-    overflow-x: hidden;
-  }
-
-  /* ─── CA HERO ──────────────────────────────────────────────── */
-  canvas#ca {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 1;
-  }
-
-  #hero-spacer {
-    position: relative;
-    height: 100vh;
-    z-index: 2;
-    pointer-events: none;
-  }
-
-  #link-overlay {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 4;
-    pointer-events: none;
-    transition: opacity 0.5s ease;
-  }
-
-  #link-overlay a, #image-hover {
-    position: absolute;
-    pointer-events: auto;
-    cursor: pointer;
-    text-decoration: none;
-    color: transparent;
-  }
-
-  #image-hover {
-    border-radius: 50%;
-    z-index: 5;
-    transition: opacity 0.5s ease;
-  }
-
-  #scanlines {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 3;
-    pointer-events: none;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
-  }
-
-  .scroll-hint {
-    position: fixed;
-    bottom: 28px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 6;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--text-dim);
-    opacity: 0;
-    transition: opacity 0.8s ease;
-    pointer-events: none;
-  }
-  .scroll-hint.visible { opacity: 0.5; }
-
-  /* ─── CONTENT SECTIONS ─────────────────────────────────────── */
-  #content {
-    position: relative;
-    z-index: 10;
-    background: var(--bg);
-  }
-
-  /* Gradient fade from CA hero into content */
-  #content::before {
-    content: '';
-    display: block;
-    height: 120px;
-    background: linear-gradient(to bottom, transparent, var(--bg));
-    margin-top: -120px;
-  }
-
-  .content-inner {
-    max-width: 780px;
-    margin: 0 auto;
-    padding: 0 24px 80px;
-  }
-
-  /* Section nav */
-  .section-nav {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
-    padding: 24px 0 48px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 48px;
-  }
-
-  .section-nav a {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.78rem;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    text-decoration: none;
-    color: var(--text-dim);
-    padding: 8px 16px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    transition: all 0.25s ease;
-  }
-
-  .section-nav a.nav-museum {
-    color: var(--accent);
-    border-color: var(--accent-dim);
-  }
-
-  .section-nav a:hover {
-    color: var(--accent);
-    border-color: var(--accent-dim);
-    background: rgba(127,221,170,0.04);
-  }
-
-  /* Section headers */
-  .section {
-    margin-bottom: 56px;
-  }
-
-  .section-title {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1.6rem;
-    color: var(--text);
-    margin-bottom: 8px;
-    letter-spacing: -0.02em;
-  }
-
-  .section-subtitle {
-    font-size: 0.85rem;
-    color: var(--text-dim);
-    margin-bottom: 24px;
-    line-height: 1.5;
-  }
-
-  /* About */
-  .about-text {
-    font-size: 0.95rem;
-    line-height: 1.75;
-    color: var(--text);
-    margin-bottom: 16px;
-  }
-
-  .about-text strong {
-    color: var(--accent);
-    font-weight: 500;
-  }
-
-  .about-detail {
-    font-size: 0.85rem;
-    line-height: 1.65;
-    color: var(--text-dim);
-    margin-bottom: 12px;
-  }
-
-  .social-row {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 20px;
-    margin-bottom: 24px;
-  }
-
-  .social-row a {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    text-decoration: none;
-    color: var(--accent);
-    padding: 6px 14px;
-    border: 1px solid rgba(127,221,170,0.2);
-    border-radius: 3px;
-    transition: all 0.25s ease;
-  }
-
-  .social-row a:hover {
-    background: rgba(127,221,170,0.08);
-    border-color: var(--accent);
-  }
-
-  .email-mono {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.82rem;
-    color: var(--text-dim);
-    background: var(--bg3);
-    padding: 6px 12px;
-    border-radius: 4px;
-    display: inline-block;
-    margin-bottom: 16px;
-  }
-
-  /* Search */
-  .search-container {
-    margin-bottom: 32px;
-  }
-
-  .search-input {
-    width: 100%;
-    padding: 12px 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
-    background: var(--bg2);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    outline: none;
-    transition: border-color 0.25s ease;
-  }
-
-  .search-input::placeholder {
-    color: var(--text-muted);
-  }
-
-  .search-input:focus {
-    border-color: var(--accent-dim);
-  }
-
-  /* Cards */
-  .card {
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 18px 20px;
-    margin-bottom: 12px;
-    transition: border-color 0.25s ease, transform 0.2s ease;
-    display: block;
-    text-decoration: none;
-    color: inherit;
-  }
-
-  a.card:hover, .card:hover {
-    border-color: rgba(127,221,170,0.3);
-    transform: translateY(-1px);
-  }
-
-  .card-title {
-    font-family: 'Inter', sans-serif;
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text);
-    margin-bottom: 6px;
-    line-height: 1.4;
-  }
-
-  a.card .card-title {
-    color: var(--accent);
-  }
-
-  .card-meta {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-    letter-spacing: 0.03em;
-  }
-
-  .card-desc {
-    font-size: 0.85rem;
-    color: var(--text-dim);
-    line-height: 1.55;
-    margin: 0;
-  }
-
-  .card-tags {
-    margin-top: 8px;
-  }
-
-  .tag {
-    display: inline-block;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    color: var(--accent);
-    background: var(--accent-dim);
-    padding: 2px 8px;
-    border-radius: 3px;
-    margin-right: 4px;
-    text-transform: lowercase;
-  }
-
-  /* Show more button */
-  .show-more {
-    display: block;
-    width: 100%;
-    padding: 12px;
-    margin-top: 8px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.05em;
-    text-align: center;
-    background: var(--bg3);
-    color: var(--text-dim);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.25s ease;
-  }
-
-  .show-more:hover {
-    color: var(--accent);
-    border-color: rgba(127,221,170,0.2);
-  }
-
-  /* Footer */
-  .site-footer {
-    text-align: center;
-    padding: 40px 24px;
-    border-top: 1px solid var(--border);
-    margin-top: 24px;
-  }
-
-  .site-footer p {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
-  }
-
-  /* ─── RESPONSIVE ───────────────────────────────────────────── */
-  @media (max-width: 600px) {
-    .section-nav { gap: 6px; }
-    .section-nav a { padding: 6px 10px; font-size: 0.7rem; }
-    .social-row a { padding: 5px 10px; font-size: 0.7rem; }
-    .section-title { font-size: 1.3rem; }
-  }
+  .boot-hint { font-size: .82rem; opacity: .65; }
 </style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./museum/vendor/three.module.min.js",
+    "three/addons/": "./museum/vendor/addons/"
+  }
+}
+</script>
 </head>
 <body>
 
-<!-- ─── CA HERO LAYER ────────────────────────────────────────────────── -->
-<canvas id="ca"></canvas>
-<div id="scanlines"></div>
-<div id="link-overlay"></div>
-<div id="image-hover"></div>
-<div class="scroll-hint" id="scrollHint"></div>
+<canvas id="scene" aria-label="Three-dimensional museum. Use the room map or the text site if you prefer."></canvas>
 
-<!-- Hero spacer: transparent div so scroll starts below the CA -->
-<div id="hero-spacer"></div>
-
-<!-- ─── CONTENT ──────────────────────────────────────────────────────── -->
-<div id="content">
-  <div class="content-inner">
-
-    <nav class="section-nav">
-      <a href="#about">About</a>
-      <a href="#publications-section">Publications</a>
-      <a href="#podcast-section">Podcast</a>
-      <a href="#writing-section">Writing</a>
-      <a href="#math-section">Math</a>
-      <a href="museum.html" class="nav-museum">Museum ↗</a>
-    </nav>
-
-    <!-- ABOUT -->
-    <section class="section" id="about">
-      <h2 class="section-title">About</h2>
-      <div class="section-subtitle">David Zhang &nbsp;张博诚</div>
-
-      <p class="about-text">
-        I care about loving God and people.
-      </p>
-      <p class="about-text">
-        Undergraduate student at the <strong>University of Illinois Urbana-Champaign</strong>, studying Computer Science and Physics.
-      </p>
-      <p class="about-text">
-        I'm currently an independent researcher in <strong>reinforcement learning and 3D vision for LLMs</strong>. I want to build smart, autonomous, tool-using agents. 
-      </p>
-      <p class="about-detail">
-        Previously, I worked with Professor Jiaxuan You on multi-agent reinforcement learning. 
-      </p>
-      <p class="about-detail">
-        Last year, I collaborated with the NVIDIA math reasoning team through Dr. Branislav Kisacanin, where I designed the math olympiad dataset for our published study. For two years in high school I worked with the QMCPy team, advised by Professor Fred Hickernell and designed many randomization techniques.
-      </p>
-      <p class="about-detail">
-        Selected as a Young Researcher for the 2025 Heidelberg Laureate Forum. Had meaningful conversations with Richard Sutton, David Silver, Pat Hanrahan, Sanjeev Arora, Ngo Bao Chau, Jack Dongarra, Bob Tarjan and many more.
-      </p>
-
-      <div class="email-mono">davidz10@illinois.edu</div>
-
-      <div class="social-row">
-        <a href="assets/cv.pdf">CV</a>
-        <a href="https://x.com/bdavidzhang" target="_blank" rel="noopener">X</a>
-        <a href="https://www.linkedin.com/in/bdavidzhang/" target="_blank" rel="noopener">LinkedIn</a>
-        <a href="https://github.com/bdavidzhang" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://www.instagram.com/david7hang/" target="_blank" rel="noopener">Instagram</a>
-        <a href="https://www.youtube.com/@bdavidzhang" target="_blank" rel="noopener">YouTube</a>
-      </div>
-    </section>
-
-    <!-- SEARCH -->
-    <div class="search-container">
-      <input type="text" id="content-search" class="search-input" placeholder="Search publications, podcasts, writings, math notes...">
-    </div>
-
-    <!-- PUBLICATIONS -->
-    <section class="section" id="publications-section">
-      <h2 class="section-title">Publications</h2>
-      <div id="publications-container"></div>
-    </section>
-
-    <!-- PODCAST -->
-    <section class="section" id="podcast-section">
-      <h2 class="section-title">Podcast</h2>
-      <div class="section-subtitle">David Talks With... — Popularizing without compromising serious science.</div>
-      <div id="podcast-container"></div>
-    </section>
-
-    <!-- WRITING -->
-    <section class="section" id="writing-section">
-      <h2 class="section-title">Writing</h2>
-      <div id="writings-container"></div>
-    </section>
-
-    <!-- MATH -->
-    <section class="section" id="math-section">
-      <h2 class="section-title">Math Notes</h2>
-      <div id="math-container"></div>
-    </section>
-
-    <footer class="site-footer">
-      <p>&copy; 2025 David Zhang</p>
-    </footer>
-
+<!-- Crawlable, no-JS and no-WebGL fallback. Also the accessible route to the same content. -->
+<noscript>
+  <div id="no-webgl">
+    <h1>The Museum needs JavaScript</h1>
+    <p>Everything here is also available as a plain text site.</p>
+    <p><a href="home.html">Go to bdavidzhang.github.io →</a></p>
   </div>
+</noscript>
+
+<div id="boot-error" hidden>
+  <h1>The museum didn't load</h1>
+  <p id="boot-reason">Something went wrong starting the 3D view.</p>
+  <pre id="boot-detail" hidden></pre>
+  <p><a href="home.html">Visit the text version instead →</a></p>
+  <p class="boot-hint">If this looks like a bug, the detail above is what to report.</p>
 </div>
 
-<script>
-// ═══════════════════════════════════════════════════════════════════════
-//  CA ANIMATION (hero)
-// ═══════════════════════════════════════════════════════════════════════
-const CELL = 2;
-const ALIVE_PROB = 0.28;
-const FPS = 16;
-const GLOW_R = 4;
+<script type="module">
+  // Fail loudly and specifically. A blank canvas or a vague "something broke"
+  // is impossible to act on, so every failure path names itself here.
+  const errBox = document.getElementById('boot-error');
+  const reason = document.getElementById('boot-reason');
+  const detail = document.getElementById('boot-detail');
 
-const PHASE = {
-  imageStart: 600,
-  imageDone:  2000,
-  nameStart:  1800,
-  nameDone:   3000,
-  subtitle:   3400,
-  bio:        4000,
-  links:      4600,
-  hint:       5400,
-};
-
-const LINK_DEFS = [
-  { label: 'GitHub', href: 'https://github.com/bdavidzhang', target: '_blank' },
-  { label: 'LinkedIn', href: 'https://www.linkedin.com/in/bdavidzhang/', target: '_blank' },
-  { label: 'X', href: 'https://x.com/bdavidzhang', target: '_blank' },
-  { label: 'YouTube', href: 'https://www.youtube.com/@bdavidzhang', target: '_blank' },
-  { label: 'Contact', href: 'mailto:davidz10@illinois.edu' },
-];
-
-const canvas = document.getElementById('ca');
-const ctx = canvas.getContext('2d');
-let W, H, cols, rows, dpr;
-let grid, nextGrid, frozenMask, targetBitmap, glowMap;
-let imgData, pixels;
-let textRegions = [];
-let linkScreenRects = [];
-
-let profileImg = null, jediImg = null;
-let imageColors = null, jediColors = null, imageMask = null;
-let useJedi = false;
-let imgGridX = 0, imgGridY = 0, imgGridSize = 0;
-
-function resize() {
-  dpr = window.devicePixelRatio || 1;
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cols = Math.ceil(W / CELL);
-  rows = Math.ceil(H / CELL);
-  imgData = ctx.createImageData(W * dpr, H * dpr);
-  pixels = new Uint32Array(imgData.data.buffer);
-}
-
-function sampleImageToGrid(img, gx, gy, gSize) {
-  const off = document.createElement('canvas');
-  off.width = gSize; off.height = gSize;
-  const oc = off.getContext('2d');
-  oc.drawImage(img, 0, 0, gSize, gSize);
-  const id = oc.getImageData(0, 0, gSize, gSize);
-  const d = id.data;
-  const colors = new Uint32Array(cols * rows);
-  const mask = new Uint8Array(cols * rows);
-
-  for (let ly = 0; ly < gSize; ly++) {
-    for (let lx = 0; lx < gSize; lx++) {
-      const pi = (ly * gSize + lx) * 4;
-      const r = d[pi], g = d[pi+1], b = d[pi+2], a = d[pi+3];
-      if (a < 100) continue;
-      const dx = lx - gSize/2, dy = ly - gSize/2;
-      if (dx*dx + dy*dy > (gSize/2)*(gSize/2)) continue;
-      const cx = gx + lx, cy = gy + ly;
-      if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
-      const idx = cy * cols + cx;
-      const lum = 0.299*r + 0.587*g + 0.114*b;
-      const mix = 0.7;
-      const fr = ((r*mix + lum*0.15*(1-mix)) * (a/255)) | 0;
-      const fg = ((g*mix + lum*0.5*(1-mix)) * (a/255)) | 0;
-      const fb = ((b*mix + lum*0.3*(1-mix)) * (a/255)) | 0;
-      colors[idx] = 0xFF000000 | (fb << 16) | (fg << 8) | fr;
-      mask[idx] = 1;
+  function fail(msg, err) {
+    reason.textContent = msg;
+    if (err) {
+      detail.hidden = false;
+      detail.textContent = (err.stack || err.message || String(err)).slice(0, 900);
+      console.error('[museum]', err);
     }
+    errBox.hidden = false;
   }
-  return { colors, mask };
-}
 
-function renderTextToBitmap(texts) {
-  const off = document.createElement('canvas');
-  off.width = cols; off.height = rows;
-  const oc = off.getContext('2d');
-  oc.fillStyle = '#000'; oc.fillRect(0, 0, cols, rows);
-  for (const t of texts) {
-    oc.fillStyle = '#fff';
-    oc.font = `${t.fontWeight||'700'} ${t.fontSize}px ${t.fontFamily||'Syne, sans-serif'}`;
-    oc.textAlign = 'center'; oc.textBaseline = 'middle';
-    t.maxWidth ? oc.fillText(t.text, t.x, t.y, t.maxWidth) : oc.fillText(t.text, t.x, t.y);
-  }
-  const id = oc.getImageData(0, 0, cols, rows);
-  const bmp = new Uint8Array(cols * rows);
-  for (let i = 0; i < cols*rows; i++) bmp[i] = id.data[i*4] > 80 ? 1 : 0;
-  return bmp;
-}
+  // three.js r169 needs WebGL2 specifically — a WebGL1-only context would pass a
+  // naive check and then die inside the renderer with a far less useful message.
+  function probe() {
+    const canvas = document.createElement('canvas');
+    let gl2 = null;
+    try { gl2 = canvas.getContext('webgl2'); } catch (e) { /* some builds throw */ }
+    if (gl2) return { ok: true };
 
-function computeGlowMap(bmp) {
-  const glow = new Float32Array(cols * rows);
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    if (!bmp[y*cols+x]) continue;
-    for (let ny = Math.max(0,y-GLOW_R); ny <= Math.min(rows-1,y+GLOW_R); ny++)
-      for (let nx = Math.max(0,x-GLOW_R); nx <= Math.min(cols-1,x+GLOW_R); nx++) {
-        const d = Math.sqrt((nx-x)**2+(ny-y)**2);
-        if (d <= GLOW_R) { const ni = ny*cols+nx; glow[ni] = Math.max(glow[ni], 1-d/GLOW_R); }
-      }
-  }
-  return glow;
-}
+    let gl1 = null;
+    try {
+      gl1 = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    } catch (e) { /* ignore */ }
 
-function stepLife() {
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    const idx = y*cols+x;
-    if (frozenMask[idx]) { nextGrid[idx] = targetBitmap[idx]; continue; }
-    let n = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dy) continue;
-      n += grid[((y+dy+rows)%rows)*cols+((x+dx+cols)%cols)];
+    if (gl1) {
+      return { ok: false, msg: 'This browser has WebGL 1 but not WebGL 2, which the museum needs.' };
     }
-    nextGrid[idx] = grid[idx] ? ((n===2||n===3)?1:0) : (n===3?1:0);
+    return {
+      ok: false,
+      msg: 'WebGL is unavailable in this browser. On Linux this is usually hardware '
+         + 'acceleration being off — check chrome://gpu, and try launching with '
+         + '--enable-unsafe-swiftshader if you have no GPU.',
+    };
   }
-  [grid, nextGrid] = [nextGrid, grid];
-}
 
-function crystallizeRect(rx, ry, rw, rh, progress) {
-  const maxR = Math.sqrt(rw*rw+rh*rh)/2, r = maxR*progress;
-  const ccx = rx+rw/2, ccy = ry+rh/2;
-  for (let y = Math.max(0,Math.floor(ry-GLOW_R)); y < Math.min(rows,Math.ceil(ry+rh+GLOW_R)); y++)
-    for (let x = Math.max(0,Math.floor(rx-GLOW_R)); x < Math.min(cols,Math.ceil(rx+rw+GLOW_R)); x++) {
-      if (Math.sqrt((x-ccx)**2+(y-ccy)**2) < r) { const idx = y*cols+x; frozenMask[idx]=1; grid[idx]=targetBitmap[idx]; }
-    }
-}
-
-function crystallizeCircle(ccx, ccy, radius, progress) {
-  const r = radius * progress;
-  for (let y = Math.max(0,Math.floor(ccy-radius-GLOW_R)); y < Math.min(rows,Math.ceil(ccy+radius+GLOW_R)); y++)
-    for (let x = Math.max(0,Math.floor(ccx-radius-GLOW_R)); x < Math.min(cols,Math.ceil(ccx+radius+GLOW_R)); x++) {
-      if (Math.sqrt((x-ccx)**2+(y-ccy)**2) < r) { const idx = y*cols+x; frozenMask[idx]=1; grid[idx]=targetBitmap[idx]; }
-    }
-}
-
-const BG_COLOR = 0xFF0C0A0A, CHAOS_CLR = 0xFF28321E, GLOW_CLR = [127,221,170];
-
-function draw(time) {
-  const pw = W*dpr, ph = H*dpr, cellPx = CELL*dpr;
-  pixels.fill(BG_COLOR);
-  const aic = useJedi ? jediColors : imageColors;
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    const idx = y*cols+x, frozen = frozenMask[idx], alive = grid[idx];
-    const isImg = imageMask && imageMask[idx];
-    const isText = !isImg && frozen && targetBitmap[idx];
-    const gl = frozen ? glowMap[idx] : 0;
-    let color = 0;
-    if (isImg && frozen && alive && aic) {
-      const base = aic[idx]; if (!base) continue;
-      const s = 0.92 + 0.08*Math.sin(time*0.0015+x*0.12+y*0.08);
-      color = 0xFF000000|(((((base>>16)&0xFF)*s)|0)<<16)|((((( base>>8)&0xFF)*s)|0)<<8)|((((base&0xFF)*s)|0));
-    } else if (isText && alive) {
-      const s = 0.88+0.12*Math.sin(time*0.002+x*0.15+y*0.1);
-      color = 0xFF000000|(((215*s)|0)<<16)|(((240*s)|0)<<8)|((210*s)|0);
-    } else if (frozen && gl > 0.12 && !alive) {
-      const a = gl*0.22;
-      color = 0xFF000000|(((12+(GLOW_CLR[2]*a)|0))<<16)|(((10+(GLOW_CLR[1]*a)|0))<<8)|((10+(GLOW_CLR[0]*a)|0));
-    } else if (alive && !frozen) {
-      color = CHAOS_CLR;
-    } else continue;
-    const px0 = x*cellPx, py0 = y*cellPx, sz = cellPx-dpr;
-    for (let py = py0; py < py0+sz && py < ph; py++) { const ro = py*pw; for (let px = px0; px < px0+sz && px < pw; px++) pixels[ro+px] = color; }
-  }
-  ctx.putImageData(imgData, 0, 0);
-}
-
-function computeLayout() {
-  const cx = cols/2, cy = rows/2;
-  const nameSize = Math.max(12, Math.floor(Math.min(cols*0.055, rows*0.09)));
-  const subSize = Math.max(5, Math.floor(nameSize*0.30));
-  const bioSize = Math.max(4, Math.floor(nameSize*0.24));
-  imgGridSize = Math.max(30, Math.floor(Math.min(cols*0.12, rows*0.22)));
-  const imgRadius = imgGridSize/2;
-  const gap = Math.floor(nameSize*0.5);
-  const totalH = imgGridSize+gap+nameSize+subSize*2.8+bioSize*3.5+bioSize*1.4;
-  const startY = cy - totalH/2;
-  imgGridX = Math.floor(cx - imgGridSize/2);
-  imgGridY = Math.floor(startY);
-  const imgCX = imgGridX+imgRadius, imgCY = imgGridY+imgRadius;
-  const nameY = imgGridY+imgGridSize+gap+nameSize*0.5;
-  const subY = nameY+nameSize*0.9;
-  const bioY = subY+subSize*2.8;
-  const linksY = bioY+bioSize*3.5;
-
-  const linkStr = LINK_DEFS.map(l=>l.label).join('      ');
-  const mc = document.createElement('canvas').getContext('2d');
-  mc.font = `800 ${nameSize}px Syne, sans-serif`;
-  const nameW = mc.measureText('David Zhang').width;
-  mc.font = `400 ${subSize}px JetBrains Mono, monospace`;
-  const subW = mc.measureText('CS & Physics · UIUC').width;
-  mc.font = `300 ${bioSize}px JetBrains Mono, monospace`;
-  const bioW = mc.measureText('Building at the intersection of math and machines').width;
-  mc.font = `500 ${bioSize}px JetBrains Mono, monospace`;
-  const linkW = mc.measureText(linkStr).width;
-
-  const texts = [
-    { text:'David Zhang', x:cx, y:nameY, fontSize:nameSize, fontFamily:'Syne, sans-serif', fontWeight:'800' },
-    { text:'CS & Physics · UIUC', x:cx, y:subY, fontSize:subSize, fontFamily:'JetBrains Mono, monospace', fontWeight:'400' },
-    { text:'Building at the intersection of math and machines', x:cx, y:bioY, fontSize:bioSize, fontFamily:'JetBrains Mono, monospace', fontWeight:'300', maxWidth:cols*0.85 },
-    { text:linkStr, x:cx, y:linksY, fontSize:bioSize, fontFamily:'JetBrains Mono, monospace', fontWeight:'500', maxWidth:cols*0.9 },
-  ];
-
-  const pad = 6;
-  textRegions = [
-    { key:'image', x:imgGridX-pad, y:imgGridY-pad, w:imgGridSize+pad*2, h:imgGridSize+pad*2, cx:imgCX, cy:imgCY, r:imgRadius+pad },
-    { key:'name', x:cx-nameW/2-pad, y:nameY-nameSize*0.7-pad, w:nameW+pad*2, h:nameSize*1.4+pad*2 },
-    { key:'subtitle', x:cx-subW/2-pad, y:subY-subSize*0.7-pad, w:subW+pad*2, h:subSize*1.4+pad*2 },
-    { key:'bio', x:cx-Math.min(bioW,cols*0.85)/2-pad, y:bioY-bioSize*0.7-pad, w:Math.min(bioW,cols*0.85)+pad*2, h:bioSize*1.4+pad*2 },
-    { key:'links', x:cx-Math.min(linkW,cols*0.9)/2-pad, y:linksY-bioSize*0.7-pad, w:Math.min(linkW,cols*0.9)+pad*2, h:bioSize*1.4+pad*2 },
-  ];
-
-  linkScreenRects = [];
-  mc.font = `500 ${bioSize}px JetBrains Mono, monospace`;
-  const labels = LINK_DEFS.map(l=>l.label);
-  const spacing = '      ';
-  const fullStr = labels.join(spacing);
-  const fullW = Math.min(mc.measureText(fullStr).width, cols*0.9);
-  const scale = fullW / mc.measureText(fullStr).width;
-  let cursor = 0;
-  for (let i = 0; i < LINK_DEFS.length; i++) {
-    const prefixW = mc.measureText(fullStr.substring(0, cursor)).width * scale;
-    const labelW = mc.measureText(labels[i]).width * scale;
-    linkScreenRects.push({ x:(cx-fullW/2+prefixW)*CELL, y:(linksY-bioSize*0.7)*CELL, w:labelW*CELL, h:bioSize*1.6*CELL });
-    cursor += labels[i].length + spacing.length;
-  }
-  return texts;
-}
-
-function positionOverlays() {
-  const overlay = document.getElementById('link-overlay');
-  overlay.innerHTML = '';
-  for (let i = 0; i < LINK_DEFS.length; i++) {
-    const r = linkScreenRects[i], a = document.createElement('a');
-    a.href = LINK_DEFS[i].href;
-    if (LINK_DEFS[i].target) { a.target = LINK_DEFS[i].target; a.rel = 'noopener'; }
-    a.textContent = LINK_DEFS[i].label;
-    a.style.left = r.x+'px'; a.style.top = r.y+'px';
-    a.style.width = r.w+'px'; a.style.height = r.h+'px';
-    overlay.appendChild(a);
-  }
-  const ih = document.getElementById('image-hover');
-  ih.style.left = imgGridX*CELL+'px'; ih.style.top = imgGridY*CELL+'px';
-  ih.style.width = imgGridSize*CELL+'px'; ih.style.height = imgGridSize*CELL+'px';
-}
-
-let startTime = null, lastStep = 0;
-
-function loop(timestamp) {
-  if (!startTime) startTime = timestamp;
-  const elapsed = timestamp - startTime;
-  if (timestamp - lastStep > 1000/FPS) { stepLife(); lastStep = timestamp; }
-  for (const region of textRegions) {
-    let ps, pd;
-    if (region.key==='image')    { ps=PHASE.imageStart; pd=PHASE.imageDone-PHASE.imageStart; }
-    else if (region.key==='name')     { ps=PHASE.nameStart; pd=PHASE.nameDone-PHASE.nameStart; }
-    else if (region.key==='subtitle') { ps=PHASE.subtitle; pd=800; }
-    else if (region.key==='bio')      { ps=PHASE.bio; pd=900; }
-    else if (region.key==='links')    { ps=PHASE.links; pd=900; }
-    if (elapsed > ps) {
-      const p = Math.min(1,(elapsed-ps)/pd), ep = 1 - (1-p)**3;
-      region.key==='image' ? crystallizeCircle(region.cx,region.cy,region.r,ep) : crystallizeRect(region.x,region.y,region.w,region.h,ep);
-    }
-  }
-  if (elapsed > PHASE.hint) document.getElementById('scrollHint').classList.add('visible');
-  draw(timestamp);
-  requestAnimationFrame(loop);
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = src;
-  });
-}
-
-async function caInit() {
-  if (!profileImg) {
-    [profileImg, jediImg] = await Promise.all([loadImage('assets/me_circle.png'), loadImage('assets/me_jedi.png')]);
-  }
-  resize();
-  const n = cols*rows;
-  grid = new Uint8Array(n); nextGrid = new Uint8Array(n); frozenMask = new Uint8Array(n);
-  for (let i = 0; i < n; i++) grid[i] = Math.random() < ALIVE_PROB ? 1 : 0;
-  const texts = computeLayout();
-  const normal = sampleImageToGrid(profileImg, imgGridX, imgGridY, imgGridSize);
-  const jedi = sampleImageToGrid(jediImg, imgGridX, imgGridY, imgGridSize);
-  imageColors = normal.colors; imageMask = normal.mask; jediColors = jedi.colors;
-  targetBitmap = renderTextToBitmap(texts);
-  for (let i = 0; i < n; i++) if (imageMask[i]) targetBitmap[i] = 1;
-  glowMap = computeGlowMap(targetBitmap);
-  positionOverlays();
-  startTime = null;
-  requestAnimationFrame(loop);
-}
-
-const imageHover = document.getElementById('image-hover');
-imageHover.addEventListener('mouseenter', () => { useJedi = true; });
-imageHover.addEventListener('mouseleave', () => { useJedi = false; });
-imageHover.addEventListener('click', () => { useJedi = !useJedi; });
-
-// Fade out hero overlays on scroll
-window.addEventListener('scroll', () => {
-  const scrollY = window.scrollY;
-  const threshold = window.innerHeight * 0.3;
-  const opacity = Math.max(0, 1 - scrollY / threshold);
-  document.getElementById('link-overlay').style.opacity = opacity;
-  document.getElementById('image-hover').style.opacity = opacity;
-  document.getElementById('scrollHint').style.opacity = Math.max(0, 0.5 - scrollY / (threshold * 0.5));
-  if (scrollY > threshold) {
-    document.getElementById('link-overlay').style.pointerEvents = 'none';
-    document.getElementById('image-hover').style.pointerEvents = 'none';
+  const result = probe();
+  if (!result.ok) {
+    fail(result.msg);
   } else {
-    document.getElementById('link-overlay').style.pointerEvents = '';
-    document.getElementById('image-hover').style.pointerEvents = '';
+    import('./museum/main.js').catch((err) => {
+      fail('The museum code failed to start. Details:', err);
+    });
   }
-});
-
-let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(caInit, 200); });
-
-// ═══════════════════════════════════════════════════════════════════════
-//  CONTENT LOADING (from JSON files)
-// ═══════════════════════════════════════════════════════════════════════
-const state = {
-  podcasts: [], writings: [], math: [], publications: [],
-  limits: { podcasts: 3, writings: 3, math: 3, publications: 3 },
-  searchTerm: ''
-};
-
-function createCard(item, type) {
-  let link = item.link || '#';
-  let isLink = false;
-
-  if (type === 'writings') {
-    link = item.slug ? `essay.html?slug=${item.slug}` : '#';
-    isLink = true;
-  } else if (type === 'math') {
-    link = item.slug ? `math-note.html?slug=${item.slug}` : '#';
-    isLink = true;
-  } else if (type === 'podcasts' && item.link) {
-    isLink = true;
-  }
-
-  const el = document.createElement(isLink ? 'a' : 'div');
-  el.className = 'card';
-  if (isLink) { el.href = link; if (type === 'podcasts') { el.target = '_blank'; el.rel = 'noopener'; } }
-
-  let metaParts = [];
-  if (type === 'publications' && item.venue) metaParts.push(item.venue);
-  if (item.date) metaParts.push(item.date);
-  if (item.year) metaParts.push(item.year);
-  if (type === 'podcasts' && item.guest) metaParts.push('Guest: ' + item.guest);
-
-  let html = `<div class="card-title">${item.title}</div>`;
-  if (metaParts.length) html += `<div class="card-meta">${metaParts.join(' · ')}</div>`;
-  if (item.description) html += `<p class="card-desc">${item.description}</p>`;
-  if (item.tags && item.tags.length) html += `<div class="card-tags">${item.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>`;
-
-  el.innerHTML = html;
-  return el;
-}
-
-function renderSection(containerId, data, limit, type) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  container.innerHTML = '';
-
-  let filtered = data;
-  if (state.searchTerm) {
-    const term = state.searchTerm.toLowerCase();
-    filtered = data.filter(item =>
-      (item.title && item.title.toLowerCase().includes(term)) ||
-      (item.description && item.description.toLowerCase().includes(term)) ||
-      (item.guest && item.guest.toLowerCase().includes(term)) ||
-      (item.venue && item.venue.toLowerCase().includes(term)) ||
-      (item.tags && item.tags.some(tag => tag.toLowerCase().includes(term)))
-    );
-  }
-
-  const showCount = state.searchTerm ? filtered.length : limit;
-  filtered.slice(0, showCount).forEach(item => container.appendChild(createCard(item, type)));
-
-  if (!state.searchTerm && filtered.length > limit) {
-    const btn = document.createElement('button');
-    btn.className = 'show-more';
-    btn.textContent = `Show all ${filtered.length} items`;
-    btn.onclick = () => { state.limits[type] = filtered.length; renderAll(); };
-    container.appendChild(btn);
-  }
-
-  if (filtered.length === 0 && state.searchTerm) {
-    const msg = document.createElement('p');
-    msg.style.cssText = 'color:var(--text-muted);font-size:0.85rem;text-align:center;padding:20px 0;';
-    msg.textContent = 'No results found.';
-    container.appendChild(msg);
-  }
-}
-
-function renderAll() {
-  renderSection('publications-container', state.publications, state.limits.publications, 'publications');
-  renderSection('podcast-container', state.podcasts, state.limits.podcasts, 'podcasts');
-  renderSection('writings-container', state.writings, state.limits.writings, 'writings');
-  renderSection('math-container', state.math, state.limits.math, 'math');
-}
-
-const searchInput = document.getElementById('content-search');
-if (searchInput) {
-  searchInput.addEventListener('input', (e) => { state.searchTerm = e.target.value; renderAll(); });
-}
-
-Promise.all([
-  fetch('podcast.json').then(r => r.json()),
-  fetch('essay.json').then(r => r.json()),
-  fetch('math.json').then(r => r.json()),
-  fetch('publications.json').then(r => r.json()),
-]).then(([podcasts, essays, math, publications]) => {
-  state.podcasts = podcasts;
-  state.publications = publications;
-  state.writings = essays.sort((a, b) => new Date(b.date) - new Date(a.date));
-  state.math = math.sort((a, b) => new Date(b.date) - new Date(a.date));
-  renderAll();
-}).catch(err => console.error('Error loading content:', err));
-
-// ─── BOOT ────────────────────────────────────────────────────────────
-document.fonts.ready.then(caInit);
 </script>
+
 </body>
 </html>

@@ -14,8 +14,8 @@
 // its own subtree — the page background and the boot screens are painted by
 // museum.html and have to follow the same choice.
 //
-// Keys consumed here: M (room map), ` (perf readout), Esc (close reader/map).
-// E / Enter deliberately belong to main.js.
+// Keys consumed here: M (room map), ` (perf readout), Esc (close the reader, the
+// map or the portal prompt). E / Enter deliberately belong to main.js.
 
 import { ROOMS, MODE, isNight, setMode, themeFor } from './config.js';
 
@@ -283,7 +283,7 @@ export function createUI({ isMobile = false } = {}) {
 
   const foot = el('p', 'mus-loader-foot');
   const plainLink = el('a', null, 'or read the plain site instead');
-  plainLink.href = resolveHref('index.html');
+  plainLink.href = resolveHref('home.html');
   foot.appendChild(plainLink);
   loaderInner.appendChild(foot);
 
@@ -303,7 +303,9 @@ export function createUI({ isMobile = false } = {}) {
   const promptKind = el('span', 'mus-prompt-kind');
   const promptTitle = el('span', 'mus-prompt-title');
   const promptCue = el('span', 'mus-prompt-cue');
-  promptCue.append(el('kbd', null, 'E'), document.createTextNode(' read'));
+  // the verb is swapped per exhibit kind in setFocus — a link is opened, not read
+  const promptVerb = document.createTextNode(' read');
+  promptCue.append(el('kbd', null, 'E'), promptVerb);
   const promptBtn = el('button', 'mus-prompt-btn', 'Read');
   promptBtn.type = 'button';
   prompt.append(promptKind, promptTitle, touch ? promptBtn : promptCue);
@@ -329,7 +331,7 @@ export function createUI({ isMobile = false } = {}) {
   mapBtn.setAttribute('aria-expanded', 'false');
   mapBtn.append(document.createTextNode('Rooms'), el('kbd', null, 'M'));
   const exitLink = el('a', 'mus-hud-btn mus-hud-exit', 'Plain site');
-  exitLink.href = resolveHref('index.html');
+  exitLink.href = resolveHref('home.html');
   hud.append(mapBtn, makeModeToggle('mus-hud-btn mus-mode', false), exitLink);
   root.appendChild(hud);
 
@@ -417,6 +419,52 @@ export function createUI({ isMobile = false } = {}) {
   root.appendChild(reader);
 
   // ==========================================================================
+  // 6b — portal prompt
+  // ==========================================================================
+  // The popup fallback for museum/portal.js. Stepping through the Atrium's
+  // gateway tries window.open() straight away — walking is keydown, which grants
+  // transient activation, so it usually just works. When a popup blocker eats it
+  // there is no second chance from that gesture, so this panel takes over: the
+  // visitor's click (or Enter on the auto-focused link) is itself a fresh
+  // gesture, and a gesture-driven open is never blocked.
+
+  const portal = el('div', 'mus-portal');
+  portal.hidden = true;
+  portal.setAttribute('role', 'dialog');
+  portal.setAttribute('aria-modal', 'true');
+  portal.setAttribute('aria-labelledby', 'mus-portal-title');
+
+  const portalScrim = el('div', 'mus-portal-scrim');
+  const portalCard = el('div', 'mus-portal-card');
+  portalCard.tabIndex = -1;
+
+  const portalClose = el('button', 'mus-portal-close', '×');
+  portalClose.type = 'button';
+  portalClose.setAttribute('aria-label', 'Stay in the museum');
+
+  const portalKind = el('p', 'mus-portal-kind', 'Through the portal');
+  const portalTitle = el('h2', 'mus-portal-title', '');
+  portalTitle.id = 'mus-portal-title';
+  const portalTagline = el('p', 'mus-portal-tagline', '');
+  const portalNote = el('p', 'mus-portal-note', "David Zhang's company — he is its founder.");
+
+  // An anchor, not a button: a plain link with target=_blank is the one control
+  // every browser lets through, and rel carries the opener protection outright.
+  const portalGo = el('a', 'mus-portal-go');
+  portalGo.target = '_blank';
+  portalGo.rel = 'noopener noreferrer';
+  portalGo.append(document.createTextNode('Enter '), el('span', 'mus-portal-arrow', '→'));
+
+  const portalEsc = el('p', 'mus-portal-esc');
+  portalEsc.append(el('kbd', null, 'Esc'), document.createTextNode(' to stay in the museum'));
+
+  portalCard.append(
+    portalClose, portalKind, portalTitle, portalTagline, portalNote, portalGo, portalEsc,
+  );
+  portal.append(portalScrim, portalCard);
+  root.appendChild(portal);
+
+  // ==========================================================================
   // 7 — perf readout
   // ==========================================================================
   const perf = el('aside', 'mus-perf');
@@ -451,13 +499,16 @@ export function createUI({ isMobile = false } = {}) {
   const enterSignal = signal();
 
   let readerOpen = false;
+  let portalOpen = false;
   let mapOpen = false;
   let perfOpen = false;
   let entered = false;
   let loaderGone = false;
   let currentRoom = -1;
   let lastFocus = null;
+  let portalLastFocus = null;
   let readerHideTimer = 0;
+  let portalHideTimer = 0;
   let perfTimer = 0;
 
   // --- loader ---------------------------------------------------------------
@@ -526,6 +577,10 @@ export function createUI({ isMobile = false } = {}) {
     }
     promptKind.textContent = KIND_LABEL[exhibit.kind] || 'Exhibit';
     promptTitle.textContent = exhibit.title || 'Untitled';
+    // a lectern leaves the museum, so say so rather than promising a read
+    const leaves = exhibit.kind === 'link';
+    promptVerb.nodeValue = leaves ? ' open ↗' : ' read';
+    promptBtn.textContent = leaves ? 'Open ↗' : 'Read';
     prompt.hidden = false;
     // restart the entrance transition
     prompt.classList.remove('is-on');
@@ -569,7 +624,7 @@ export function createUI({ isMobile = false } = {}) {
   // --- map ------------------------------------------------------------------
 
   function openMap() {
-    if (mapOpen || readerOpen) return;
+    if (mapOpen || readerOpen || portalOpen) return;
     mapOpen = true;
     map.hidden = false;
     void map.offsetWidth;
@@ -681,30 +736,33 @@ export function createUI({ isMobile = false } = {}) {
   const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-  function focusables() {
-    return Array.from(panel.querySelectorAll(FOCUSABLE)).filter(
+  function focusables(container) {
+    return Array.from(container.querySelectorAll(FOCUSABLE)).filter(
       (node) => !node.hidden && node.offsetParent !== null,
     );
   }
 
-  function trapTab(e) {
-    if (e.key !== 'Tab') return;
-    const items = focusables();
-    if (!items.length) {
-      e.preventDefault();
-      panel.focus();
-      return;
-    }
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === panel || !panel.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
+  /** Tab-cycle handler bound to one modal container. Both dialogs share it. */
+  function makeTrap(container) {
+    return function trapTab(e) {
+      if (e.key !== 'Tab') return;
+      const items = focusables(container);
+      if (!items.length) {
+        e.preventDefault();
+        container.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === container || !container.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
   }
 
   function openReader(exhibit) {
@@ -753,7 +811,91 @@ export function createUI({ isMobile = false } = {}) {
 
   readerClose.addEventListener('click', closeReader);
   scrim.addEventListener('click', closeReader);
-  reader.addEventListener('keydown', trapTab);
+  reader.addEventListener('keydown', makeTrap(panel));
+
+  // --- portal prompt --------------------------------------------------------
+
+  /**
+   * Show the "you stepped through the gateway" panel. Called by portal.js only
+   * when the direct window.open() was blocked, so by the time this is on screen
+   * the only way out to the site is a control the visitor operates themselves.
+   */
+  function showPortalPrompt({ title, tagline, url } = {}) {
+    const href = String(url || '').trim();
+    if (!href) return;
+
+    closeMap();
+    setFocus(null);
+    portalLastFocus = document.activeElement;
+
+    portalTitle.textContent = title || 'Open Reality';
+    portalTagline.textContent = tagline || '';
+    portalTagline.hidden = !tagline;
+    portalGo.href = href;
+    // belt and braces: these are set at build time too, but a stale DOM node
+    // must never end up pointing a new tab back at window.opener
+    portalGo.target = '_blank';
+    portalGo.rel = 'noopener noreferrer';
+
+    clearTimeout(portalHideTimer);
+    portalOpen = true;
+    root.classList.add('is-porting');
+    portal.hidden = false;
+    void portal.offsetWidth;
+    portal.classList.add('is-open');
+
+    // The cursor is captured while walking; let it go so the link is clickable.
+    if (document.pointerLockElement) document.exitPointerLock?.();
+
+    // Focus now, not on the next frame. The reader can afford requestAnimationFrame
+    // because nothing depends on where focus lands; here the focused link IS the
+    // feature — it is the only way out to the site once a popup blocker has eaten
+    // the direct attempt — and rAF is throttled to nothing in a background or
+    // hidden tab. The offsetWidth read above has already forced layout, so the
+    // element is focusable this instant; the rAF pass is only a second chance in
+    // case something else stole focus while the panel was animating in.
+    focusPortalGo();
+    requestAnimationFrame(focusPortalGo);
+  }
+
+  function focusPortalGo() {
+    if (!portalOpen || document.activeElement === portalGo) return;
+    try {
+      portalGo.focus({ preventScroll: true });
+    } catch {
+      portalGo.focus();
+    }
+  }
+
+  function closePortalPrompt() {
+    if (!portalOpen) return;
+    portalOpen = false;
+    portal.classList.remove('is-open');
+    root.classList.remove('is-porting');
+    clearTimeout(portalHideTimer);
+    portalHideTimer = setTimeout(() => {
+      if (!portalOpen) portal.hidden = true;
+    }, ANIM_MS);
+
+    if (
+      portalLastFocus &&
+      portalLastFocus.isConnected &&
+      typeof portalLastFocus.focus === 'function'
+    ) {
+      try {
+        portalLastFocus.focus({ preventScroll: true });
+      } catch {
+        portalLastFocus.focus();
+      }
+    }
+    portalLastFocus = null;
+  }
+
+  portalClose.addEventListener('click', closePortalPrompt);
+  portalScrim.addEventListener('click', closePortalPrompt);
+  // Following the link is the whole point; get the panel out of the way after.
+  portalGo.addEventListener('click', () => setTimeout(closePortalPrompt, 0));
+  portal.addEventListener('keydown', makeTrap(portalCard));
 
   // --- perf readout ---------------------------------------------------------
 
@@ -798,7 +940,10 @@ export function createUI({ isMobile = false } = {}) {
     }
 
     if (e.code === 'Escape' || e.key === 'Escape') {
-      if (readerOpen) {
+      if (portalOpen) {
+        e.preventDefault();
+        closePortalPrompt();
+      } else if (readerOpen) {
         e.preventDefault();
         closeReader();
       } else if (mapOpen) {
@@ -815,7 +960,7 @@ export function createUI({ isMobile = false } = {}) {
     }
 
     if (e.code === 'KeyM') {
-      if (readerOpen || !loaderGone) return;
+      if (readerOpen || portalOpen || !loaderGone) return;
       e.preventDefault();
       toggleMap();
     }
@@ -834,7 +979,14 @@ export function createUI({ isMobile = false } = {}) {
     setRoom,
     openReader,
     closeReader,
-    isReaderOpen: () => readerOpen,
+    showPortalPrompt,
+    closePortalPrompt,
+    isPortalOpen: () => portalOpen,
+    // Deliberately true while the portal panel is up as well. main.js reads this
+    // as "a DOM panel has the floor, keep world input out of it" — which is what
+    // stops E/Enter from opening an exhibit behind the prompt at the exact
+    // moment Enter is meant to be activating the prompt's own link.
+    isReaderOpen: () => readerOpen || portalOpen,
     onActivate: (cb) => activateSignal.add(cb),
     onTeleport: (cb) => teleportSignal.add(cb),
     onReaderClose: (cb) => readerCloseSignal.add(cb),

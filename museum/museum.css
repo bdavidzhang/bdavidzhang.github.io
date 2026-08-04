@@ -241,7 +241,8 @@
 /* ---------------------------------------------------------------- loader -- */
 
 /* Stacking inside .mus-root, low to high:
-   reticle 1 · plate 2 · prompt 3 · hud 4 · map 6 · perf 7 · reader 8 · loader 9 */
+   reticle 1 · plate 2 · prompt 3 · hud 4 · map 6 · perf 7 ·
+   reader 8 / portal prompt 8 (mutually exclusive) · loader 9 */
 
 .mus-loader {
   position: fixed;
@@ -429,7 +430,8 @@
   opacity: 0.65;
 }
 
-.mus-root.is-reading .mus-reticle {
+.mus-root.is-reading .mus-reticle,
+.mus-root.is-porting .mus-reticle {
   opacity: 0;
 }
 
@@ -528,7 +530,8 @@
   opacity: 1;
 }
 
-.mus-root.is-reading .mus-plate {
+.mus-root.is-reading .mus-plate,
+.mus-root.is-porting .mus-plate {
   opacity: 0;
 }
 
@@ -1178,6 +1181,181 @@
   color: var(--mus-tx-3);
 }
 
+/* --------------------------------------------------------- portal prompt -- */
+
+/* The popup-blocker fallback for the Atrium's Open Reality gateway. portal.js
+ * tries window.open() the instant you cross the threshold — walking is a
+ * keydown, so the browser usually allows it — and only raises this when the
+ * attempt is refused. Everything the visitor sees here is therefore a *second*
+ * chance: the link below is a real anchor, so the click (or Enter on it, since
+ * it is auto-focused) is a fresh user gesture that no blocker turns down.
+ *
+ * It sits at z-index 8, alongside the reader: both are modal, only one is ever
+ * up at a time (ui.js gates them against each other), and both must stay under
+ * the loader at 9.
+ *
+ * The card's own accent is not the room's --mus-accent: Open Reality is
+ * near-monochrome with a muted teal, and hard-coding that hue here is the point
+ * — the panel should read as *its* brand, not as the Atrium's green. Lightness
+ * still flips with the museum's mode, via the same [data-museum-mode] /
+ * .is-night convention every other token uses. No prefers-color-scheme. */
+
+/* The on-accent colour is a token rather than a mode-scoped rule on purpose: a
+   `:root[data-museum-mode='night'] .mus-portal-go` selector weighs (0,3,0) and
+   would quietly out-rank `.mus-portal-go:hover` at (0,2,0), leaving pale text on
+   the pale hover fill. Tokens keep every component rule at one class each. */
+.mus-root {
+  --mus-portal-accent: hsl(172 34% 30%);
+  --mus-portal-accent-soft: hsl(172 30% 94%);
+  --mus-portal-on-accent: #fbfdfa;
+}
+
+:root[data-museum-mode='night'] .mus-root,
+.mus-root.is-night {
+  --mus-portal-accent: hsl(172 42% 66%);
+  --mus-portal-accent-soft: hsl(172 18% 18%);
+  --mus-portal-on-accent: #10201d;
+}
+
+.mus-portal {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.mus-portal.is-open {
+  pointer-events: auto;
+}
+
+.mus-portal-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--mus-scrim);
+  opacity: 0;
+  transition: opacity 0.3s var(--mus-ease);
+}
+
+.mus-portal.is-open .mus-portal-scrim {
+  opacity: 1;
+}
+
+.mus-portal-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(30rem, calc(100vw - 2.4rem));
+  padding: clamp(1.6rem, 3.4vw, 2.3rem);
+  border: 1px solid var(--mus-line);
+  border-top: 3px solid var(--mus-portal-accent);
+  border-radius: var(--mus-radius);
+  background: var(--mus-surface);
+  box-shadow: var(--mus-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translate(-50%, calc(-50% + 0.9rem));
+  opacity: 0;
+  transition: transform 0.32s var(--mus-ease), opacity 0.28s var(--mus-ease);
+  outline: none;
+}
+
+.mus-portal.is-open .mus-portal-card {
+  transform: translate(-50%, -50%);
+  opacity: 1;
+}
+
+.mus-portal-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--mus-line);
+  border-radius: 50%;
+  background: var(--mus-surface);
+  color: var(--mus-tx-2);
+  font-size: 1.15rem;
+  line-height: 1;
+  transition: background-color 0.15s var(--mus-ease), color 0.15s var(--mus-ease);
+}
+
+.mus-portal-close:hover {
+  background: var(--mus-tx-1);
+  color: var(--mus-on-ink);
+}
+
+.mus-portal-kind {
+  margin: 0 0 0.7rem;
+  font-family: var(--mus-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mus-portal-accent);
+}
+
+.mus-portal-title {
+  margin: 0;
+  font-size: clamp(1.5rem, 3.6vw, 1.95rem);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.15;
+  color: var(--mus-tx-1);
+}
+
+.mus-portal-tagline {
+  margin: 0.7rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--mus-tx-2);
+  text-wrap: pretty;
+}
+
+.mus-portal-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.82rem;
+  color: var(--mus-tx-3);
+}
+
+.mus-portal-go {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+  padding: 0.66rem 1.25rem;
+  border: 1px solid var(--mus-portal-accent);
+  border-radius: 999px;
+  background: var(--mus-portal-accent);
+  color: var(--mus-portal-on-accent);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: background-color 0.15s var(--mus-ease), color 0.15s var(--mus-ease);
+}
+
+.mus-portal-go:hover,
+.mus-portal-go:focus-visible {
+  background: var(--mus-portal-accent-soft);
+  color: var(--mus-portal-accent);
+}
+
+.mus-portal-arrow {
+  transition: transform 0.18s var(--mus-ease);
+}
+
+.mus-portal-go:hover .mus-portal-arrow {
+  transform: translateX(2px);
+}
+
+.mus-portal-esc {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 1.15rem 0 0;
+  font-size: 0.76rem;
+  color: var(--mus-tx-3);
+}
+
 /* ---------------------------------------------------------------- perf hud */
 
 .mus-perf {
@@ -1271,7 +1449,8 @@
 }
 
 /* fade the stick out of the way while something is being read */
-:root:has(.mus-root.is-reading) .mus-stick {
+:root:has(.mus-root.is-reading) .mus-stick,
+:root:has(.mus-root.is-porting) .mus-stick {
   opacity: 0.15;
   pointer-events: none;
 }
@@ -1377,7 +1556,14 @@
     transform: none !important;
   }
 
+  /* the portal card is centred with a transform, so it cannot be zeroed the way
+     the panels above are — collapse only the travel, keep the centring */
+  .mus-portal-card {
+    transform: translate(-50%, -50%) !important;
+  }
+
   .mus-reader:not(.is-open) .mus-reader-panel,
+  .mus-portal:not(.is-open) .mus-portal-card,
   .mus-map:not(.is-open) {
     visibility: hidden;
   }

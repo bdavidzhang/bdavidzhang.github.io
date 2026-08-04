@@ -16,6 +16,7 @@
 //   * no shadows, no transparency, no per-frame allocation.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE, CSS, DIMS, isDark, roomCenterZ } from './config.js';
 
 const BASE = new URL('../', import.meta.url); // site root — museum.html lives there
@@ -49,6 +50,33 @@ const LIFT_SCALE = 1.03;
 const FOCUS_RATE = 9.5;           // exponential damping, per second
 const FRAME_GLOW = 0.55;          // frame emissive at full focus
 const FACE_GLOW = 0.1;            // face emissive at full focus
+
+// --- lecterns (kind: 'link') --------------------------------------------------
+//
+// A link is not something you read, it is somewhere you go — so it gets a
+// standing lectern with a lit button rather than a card hung on the wall. The
+// lectern parks in front of its wall anchor, which is the one strip of floor a
+// theme is already required to keep clear (themes derive their bays from
+// `ctx.anchors`), so it never lands inside the furniture.
+//
+// Local space matches a plate's: +Z points into the room, +X runs along the
+// wall, y = 0 is the floor.
+const LECT_OFFSET = 0.66;         // metres from the anchor plane into the room
+const LECT_TILT = 0.42;           // radians the head is tilted back toward the eye
+const LECT_HEAD_Y = 1.07;
+const LECT_HEAD_Z = 0.015;
+const LECT_HEAD_T = 0.10;         // head thickness, so the face clears it
+const LECT_FACE_W = 0.60;
+const LECT_FACE_H = 0.375;
+const LECT_HALF_W = 0.36;         // collider half-extents (along the wall / into the room)
+const LECT_HALF_D = 0.30;
+const LECT_BTN_R = 0.05;
+
+// Landscape label — a lectern is read at a glance and from above, so the card is
+// wider and carries far less text than a wall plate.
+const LINK_W = HI_RES ? 512 : 320;
+const LINK_H = HI_RES ? 320 : 200;
+const LINK_DESIGN_W = 512;
 
 const KIND_LABEL = {
   about: 'About',
@@ -328,6 +356,67 @@ function drawPortrait(canvas, image, exhibit, hue) {
   return true;
 }
 
+/**
+ * Draw a lectern label. Deliberately sparser than `drawCard`: a lectern is read
+ * from above while walking up to it, so it carries the destination and the fact
+ * that it leaves the museum, and nothing else.
+ */
+function drawLinkFace(canvas, exhibit, hue) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const u = (n) => n * (W / LINK_DESIGN_W);
+  const PAD = u(40);
+  const maxW = W - PAD * 2;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = CSS.matte;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = CSS.rule;
+  ctx.lineWidth = Math.max(1, u(2));
+  ctx.strokeRect(u(1), u(1), W - u(2), H - u(2));
+
+  const accent = accentCss(hue);
+
+  // accent bar, matching the wall plates so the two read as one system
+  ctx.fillStyle = accent;
+  ctx.fillRect(PAD, u(38), u(92), u(8));
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = CSS.inkSoft;
+  ctx.font = `600 ${u(20)}px Inter, system-ui, sans-serif`;
+  const kind = (KIND_LABEL[exhibit.kind] || 'Elsewhere').toUpperCase();
+  ctx.letterSpacing = `${u(2.4)}px`;
+  ctx.fillText(fitLine(ctx, kind, maxW), PAD, u(84));
+  ctx.letterSpacing = '0px';
+
+  ctx.fillStyle = CSS.ink;
+  ctx.font = `600 ${u(58)}px Inter, system-ui, sans-serif`;
+  ctx.fillText(fitLine(ctx, exhibit.title || 'Untitled', maxW), PAD, u(160));
+
+  if (exhibit.meta) {
+    ctx.fillStyle = CSS.inkSoft;
+    ctx.font = `400 ${u(26)}px Inter, system-ui, sans-serif`;
+    ctx.fillText(fitLine(ctx, exhibit.meta, maxW), PAD, u(206));
+  }
+
+  ctx.strokeStyle = CSS.rule;
+  ctx.lineWidth = Math.max(1, u(1.5));
+  ctx.beginPath();
+  ctx.moveTo(PAD, u(240));
+  ctx.lineTo(W - PAD, u(240));
+  ctx.stroke();
+
+  ctx.fillStyle = accent;
+  ctx.font = `600 ${u(21)}px Inter, system-ui, sans-serif`;
+  ctx.letterSpacing = `${u(1.8)}px`;
+  ctx.fillText(fitLine(ctx, 'PRESS E · OPENS IN A NEW TAB ↗', maxW), PAD, u(280));
+  ctx.letterSpacing = '0px';
+}
+
 function tuneTexture(tex) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.generateMipmaps = true;
@@ -349,6 +438,8 @@ const _pos = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _one = new THREE.Vector3(1, 1, 1);
+const _fwd = new THREE.Vector3();
+const _spot = new THREE.Vector3();
 
 /** Park `child` at a world position/yaw while parenting it under `parent`. */
 function placeInParent(parent, child, position, rotationY) {
@@ -418,10 +509,37 @@ export function buildExhibits(rooms, world) {
     emissive: 0x000000,
   });
 
+  // Lectern parts, shared by every link exhibit. The body is one merged geometry
+  // so a lectern costs three draw calls — body, label, button — not five. Built
+  // lazily: a museum with no link exhibits should not pay for the merge.
+  let lecternBodyGeo = null;
+  function bodyGeo() {
+    if (lecternBodyGeo) return lecternBodyGeo;
+    const parts = [
+      new THREE.BoxGeometry(0.62, 0.09, 0.48).translate(0, 0.045, 0),      // plinth
+      new THREE.BoxGeometry(0.40, 0.94, 0.30).translate(0, 0.56, 0),       // column
+      new THREE.BoxGeometry(0.72, LECT_HEAD_T, 0.54)                       // head
+        .rotateX(LECT_TILT).translate(0, LECT_HEAD_Y, LECT_HEAD_Z),
+    ];
+    lecternBodyGeo = mergeGeometries(parts, false);
+    for (const g of parts) g.dispose();
+    // mergeGeometries returns null if attribute sets disagree; these are all
+    // indexed BoxGeometry so it cannot, but a lectern-shaped hole in the room
+    // is a worse failure than a plain box.
+    if (!lecternBodyGeo) lecternBodyGeo = new THREE.BoxGeometry(0.5, 1.1, 0.4).translate(0, 0.55, 0);
+    return lecternBodyGeo;
+  }
+  const buttonGeo = new THREE.CylinderGeometry(LECT_BTN_R, LECT_BTN_R, 0.022, 14)
+    .rotateX(Math.PI / 2);          // lies flat against the column's front face
+  const bodyMat = new THREE.MeshLambertMaterial({ color: PALETTE.frame, emissive: 0x000000 });
+  const buttonRest = new THREE.MeshLambertMaterial({ color: PALETTE.rail, emissive: 0x000000 });
+
   const textures = new Set();
-  const materials = new Set([frameRest]);
+  const materials = new Set([frameRest, bodyMat, buttonRest]);
   const plates = [];
   const targets = [];
+  const colliders = [];             // lecterns are solid; wall plates are not
+  const plateAnchors = [];          // anchors actually occupied by a flat plate
   const refresh = [];               // redraw hooks, run once webfonts land
   let disposed = false;
 
@@ -508,17 +626,21 @@ export function buildExhibits(rooms, world) {
 
     const plate = {
       exhibit, pivot, lift, frame, face, faceMat,
+      restMat: frameRest,
       hotMat: null,     // per-plate frame material, cloned on first focus
       t: 0,             // 0 at rest, 1 fully focused
       target: 0,
       active: false,
       disposed: false,
+      liftY: 0,         // a plate leans out of the wall…
+      liftZ: LIFT_DIST,
     };
     face.userData.plate = plate;
 
     // one raycast target per exhibit — the face, never the frame
     targets.push(face);
     plates.push(plate);
+    plateAnchors.push(anchor);
 
     refresh.push(() => {
       if (plate.disposed || plate.faceMat.map !== cardTex) return;
@@ -527,6 +649,89 @@ export function buildExhibits(rooms, world) {
     });
 
     if (usePhoto) applyPortrait(plate, exhibit, hue);
+    return plate;
+  }
+
+  // --- one lectern -----------------------------------------------------------
+
+  function buildLectern(exhibit, anchor, hue, parent) {
+    const canvas = makeCanvas(LINK_W, LINK_H);
+    drawLinkFace(canvas, exhibit, hue);
+    const cardTex = tuneTexture(new THREE.CanvasTexture(canvas));
+    textures.add(cardTex);
+
+    const faceMat = new THREE.MeshLambertMaterial({ map: cardTex, emissive: 0x000000 });
+    materials.add(faceMat);
+
+    const pivot = new THREE.Group();
+    pivot.name = `lectern-${exhibit.id}`;
+    const lift = new THREE.Group();
+    lift.matrixAutoUpdate = false;
+    lift.updateMatrix();
+    pivot.add(lift);
+
+    const body = new THREE.Mesh(bodyGeo(), bodyMat);
+    body.matrixAutoUpdate = false;
+    body.updateMatrix();
+
+    // the head's outward normal, and the label parked just proud of it
+    const nY = Math.cos(LECT_TILT);
+    const nZ = Math.sin(LECT_TILT);
+    const off = LECT_HEAD_T / 2 + 0.006;
+
+    const face = new THREE.Mesh(faceGeo, faceMat);
+    face.scale.set(LECT_FACE_W, LECT_FACE_H, 1);
+    face.position.set(0, LECT_HEAD_Y + nY * off, LECT_HEAD_Z + nZ * off);
+    face.rotation.set(LECT_TILT - Math.PI / 2, 0, 0);   // lie the plane on the head
+    face.matrixAutoUpdate = false;
+    face.updateMatrix();
+    face.userData.exhibit = exhibit;
+
+    const button = new THREE.Mesh(buttonGeo, buttonRest);
+    button.position.set(0, 0.86, 0.158);
+    button.matrixAutoUpdate = false;
+    button.updateMatrix();
+
+    lift.add(body, face, button);
+
+    // stand it in front of the anchor rather than on it
+    _fwd.set(Math.sin(anchor.rotationY || 0), 0, Math.cos(anchor.rotationY || 0));
+    _spot.copy(anchor.position).addScaledVector(_fwd, LECT_OFFSET);
+    _spot.y = 0;
+    placeInParent(parent, pivot, _spot, anchor.rotationY);
+
+    // world-space AABB, correct for any yaw rather than just the axis-aligned walls
+    const ax = Math.abs(_fwd.x);
+    const az = Math.abs(_fwd.z);
+    const halfX = az * LECT_HALF_W + ax * LECT_HALF_D;
+    const halfZ = ax * LECT_HALF_W + az * LECT_HALF_D;
+    colliders.push({
+      minX: _spot.x - halfX, maxX: _spot.x + halfX,
+      minZ: _spot.z - halfZ, maxZ: _spot.z + halfZ,
+    });
+
+    const plate = {
+      exhibit, pivot, lift, frame: button, face, faceMat,
+      restMat: buttonRest,
+      hotMat: null,
+      t: 0,
+      target: 0,
+      active: false,
+      disposed: false,
+      liftY: LIFT_DIST, // …a lectern rises off the floor instead
+      liftZ: 0,
+    };
+    face.userData.plate = plate;
+
+    targets.push(face);
+    plates.push(plate);
+
+    refresh.push(() => {
+      if (plate.disposed || plate.faceMat.map !== cardTex) return;
+      drawLinkFace(canvas, exhibit, hue);
+      cardTex.needsUpdate = true;
+    });
+
     return plate;
   }
 
@@ -547,7 +752,10 @@ export function buildExhibits(rooms, world) {
       const exhibit = exhibits[k];
       if (!exhibit) continue;
       const anchor = (anchors && anchors[k]) || fallbackAnchor(i, k);
-      buildPlate(exhibit, anchor, room.accentHue, parent);
+      // links are somewhere to go, not something to read — they stand up off the
+      // floor as a pressable lectern instead of hanging on the wall
+      if (exhibit.kind === 'link') buildLectern(exhibit, anchor, room.accentHue, parent);
+      else buildPlate(exhibit, anchor, room.accentHue, parent);
     }
   }
 
@@ -586,7 +794,7 @@ export function buildExhibits(rooms, world) {
         // per-plate frame material, made once and kept, so two plates can fade
         // in opposite directions without sharing an emissive
         if (!focusPlate.hotMat) {
-          focusPlate.hotMat = frameRest.clone();
+          focusPlate.hotMat = focusPlate.restMat.clone();
           materials.add(focusPlate.hotMat);
         }
         focusPlate.frame.material = focusPlate.hotMat;
@@ -604,7 +812,7 @@ export function buildExhibits(rooms, world) {
       if (settled) p.t = p.target;
 
       const e = p.t * p.t * (3 - 2 * p.t);           // smoothstep
-      p.lift.position.z = LIFT_DIST * e;
+      p.lift.position.set(0, p.liftY * e, p.liftZ * e);
       p.lift.scale.setScalar(1 + (LIFT_SCALE - 1) * e);
       p.lift.updateMatrix();
       p.lift.matrixWorldNeedsUpdate = true;
@@ -614,7 +822,7 @@ export function buildExhibits(rooms, world) {
 
       if (settled) {
         p.active = false;
-        if (p.t === 0) p.frame.material = frameRest;  // back to the shared one
+        if (p.t === 0) p.frame.material = p.restMat;  // back to the shared one
         animating[i] = animating[animating.length - 1];
         animating.pop();
       }
@@ -636,10 +844,14 @@ export function buildExhibits(rooms, world) {
     for (const mat of materials) mat.dispose();
     frameGeo.dispose();
     faceGeo.dispose();
+    buttonGeo.dispose();
+    if (lecternBodyGeo) { lecternBodyGeo.dispose(); lecternBodyGeo = null; }
     textures.clear();
     materials.clear();
     plates.length = 0;
     targets.length = 0;
+    colliders.length = 0;
+    plateAnchors.length = 0;
     animating.length = 0;
     refresh.length = 0;
     focusPlate = null;
@@ -647,5 +859,5 @@ export function buildExhibits(rooms, world) {
     if (group.parent) group.parent.remove(group);
   }
 
-  return { group, targets, update, dispose };
+  return { group, targets, colliders, plateAnchors, update, dispose };
 }

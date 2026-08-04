@@ -6,10 +6,15 @@
 // leave free — three per side wall plus a pair in the back corners — and a
 // reading table, a ladder and a globe give you a reason to stop.
 //
-// The bays are derived from architecture.js's anchor layout: with six contact
-// exhibits the side plates land at z -79.325 / -85.675 and the back plates at
-// x ±2.675, all 2.15m wide. Everything below keys off those numbers, so the
-// shelving never fouls a plate.
+// The bays are derived at build time from `ctx.anchors` — the very slots
+// architecture.js hands to exhibits.js — so the shelving can never foul an
+// exhibit. This used to be three hardcoded coordinates valid for exactly six
+// contact exhibits; adding a seventh silently slid the bookcases over the
+// plates. Read the anchors instead and the room reflows with its contents.
+//
+// The contact room's exhibits are `kind: 'link'`, so they stand on the floor as
+// lecterns rather than hanging. Keeping their anchor bays clear is what leaves
+// each lectern its own alcove between the shelves.
 //
 // Draw calls: 14 — 4 book batches, 2 other instanced batches, 5 merged shells,
 // the globe, the rug and one outline.
@@ -26,10 +31,10 @@ const BOARD_T = 0.035;
 const BOOK_D = 0.24;
 const LEVELS = [0.36, 0.94, 1.52, 2.10, 2.68];
 
-// where the exhibit plates land, and how much air to leave beside them
-const PLATE_Z = [-79.325, -85.675];
-const PLATE_X = 2.675;
-const PLATE_HALF = 1.075 + 0.30;
+const SLOT_CLEAR = 0.30;            // air to leave beside an exhibit slot
+const MIN_BAY = 0.55;               // narrower than this and a bookcase is a sliver
+const FALLBACK_SLOT_W = 2.15;       // architecture.js's widest slot
+const WINDOW_HALF = 1.36 + 0.30;    // the end-wall window keeps its own bay
 
 // --- geometry helpers: each bakes its transform, so results can merge -------
 
@@ -147,22 +152,49 @@ export function library(ctx) {
     else ctx.collide(cx - len / 2, cx + len / 2, cz - CASE_D / 2, cz + CASE_D / 2);
   }
 
-  // three bays per side wall, in the gaps the plates leave
-  const bays = [
-    [bounds.maxZ - 0.40, PLATE_Z[0] + PLATE_HALF],
-    [PLATE_Z[0] - PLATE_HALF, PLATE_Z[1] + PLATE_HALF],
-    [PLATE_Z[1] - PLATE_HALF, bounds.minZ + 0.10],
-  ];
-  for (const [near, far] of bays) {
-    const mid = (near + far) / 2;
-    const len = near - far;
-    bookcase('z', -HALF_W + CASE_D / 2, mid, len, 1);
-    bookcase('z', HALF_W - CASE_D / 2, mid, len, -1);
+  // --- where the shelving may go, derived from the exhibit slots -------------
+
+  const anchors = Array.isArray(ctx.anchors) ? ctx.anchors : [];
+
+  /** What's left of [lo, hi] once every block is carved out of it. */
+  const freeRuns = (lo, hi, blocks) => {
+    const runs = [];
+    let cursor = lo;
+    for (const [bLo, bHi] of blocks.slice().sort((a, b) => a[0] - b[0])) {
+      if (bLo - cursor >= MIN_BAY) runs.push([cursor, bLo]);
+      cursor = Math.max(cursor, bHi);
+    }
+    if (hi - cursor >= MIN_BAY) runs.push([cursor, hi]);
+    return runs;
+  };
+
+  /** The stretch each of `wall`'s anchors claims, measured along `axis`. */
+  const blocksOn = (wall, axis) => anchors
+    .filter((a) => a.wall === wall && a.position)
+    .map((a) => {
+      const centre = axis === 'z' ? a.position.z : a.position.x;
+      const half = (Number(a.width) || FALLBACK_SLOT_W) / 2 + SLOT_CLEAR;
+      return [centre - half, centre + half];
+    });
+
+  // side walls: however many bays the exhibits leave, however wide they are
+  const sideRuns = {
+    left:  freeRuns(bounds.minZ + 0.10, bounds.maxZ - 0.40, blocksOn('left', 'z')),
+    right: freeRuns(bounds.minZ + 0.10, bounds.maxZ - 0.40, blocksOn('right', 'z')),
+  };
+  for (const [wall, sign] of [['left', 1], ['right', -1]]) {
+    const cx = sign > 0 ? -HALF_W + CASE_D / 2 : HALF_W - CASE_D / 2;
+    for (const [lo, hi] of sideRuns[wall]) {
+      bookcase('z', cx, (lo + hi) / 2, hi - lo, sign);
+    }
   }
-  // and a pair in the back corners, clear of the two back plates
-  const backLen = (HALF_W - 0.35) - (PLATE_X + PLATE_HALF);
-  const backMid = (PLATE_X + PLATE_HALF + HALF_W - 0.35) / 2;
-  for (const s of [-1, 1]) bookcase('x', s * backMid, backFace + CASE_D / 2, backLen, 1);
+
+  // end wall: same again, with the window holding a bay of its own dead centre
+  const backBlocks = blocksOn('back', 'x');
+  backBlocks.push([-WINDOW_HALF, WINDOW_HALF]);
+  for (const [lo, hi] of freeRuns(-HALF_W + 0.35, HALF_W - 0.35, backBlocks)) {
+    bookcase('x', (lo + hi) / 2, backFace + CASE_D / 2, hi - lo, 1);
+  }
 
   // a few volumes left on the reading table, added to an existing batch
   const tableX = -3.30;
@@ -235,12 +267,22 @@ export function library(ctx) {
   const ladderGeos = [];
   for (const s of [-1, 1]) ladderGeos.push(bx(0.05, 3.10, 0.05, 0, 1.55, s * 0.22));
   for (let i = 0; i < 7; i++) ladderGeos.push(bx(0.05, 0.04, 0.44, 0, 0.35 + i * 0.40, 0));
+  // Lean it on the widest bay the right-hand wall ended up with — a ladder
+  // parked in front of a lectern would be standing in the visitor's way, and
+  // which bay is widest depends on how many links the room holds.
+  const LADDER_HALF_Z = 0.35;
+  const widestBay = sideRuns.right.reduce(
+    (best, r) => (!best || r[1] - r[0] > best[1] - best[0] ? r : best), null);
   const ladder = fuse(ladderGeos);
-  ladder.rotateZ(-0.24);
-  const ladderX = HALF_W - CASE_D - 0.78;
-  const ladderZ = bounds.centerZ + 1.30;
-  furnitureGeos.push(ladder.translate(ladderX, 0.008, ladderZ));   // lean lifts a heel
-  ctx.collide(ladderX - 0.20, ladderX + 0.82, ladderZ - 0.35, ladderZ + 0.35);
+  if (widestBay && widestBay[1] - widestBay[0] >= LADDER_HALF_Z * 2 + 0.4) {
+    ladder.rotateZ(-0.24);
+    const ladderX = HALF_W - CASE_D - 0.78;
+    const ladderZ = (widestBay[0] + widestBay[1]) / 2;
+    furnitureGeos.push(ladder.translate(ladderX, 0.008, ladderZ));   // lean lifts a heel
+    ctx.collide(ladderX - 0.20, ladderX + 0.82, ladderZ - LADDER_HALF_Z, ladderZ + LADDER_HALF_Z);
+  } else if (ladder) {
+    ladder.dispose();
+  }
 
   // globe on a turned stand — the room's one round thing
   const globeX = 3.50;

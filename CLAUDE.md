@@ -16,7 +16,10 @@ Deployed via GitHub Pages at `bdavidzhang.github.io`.
 
 ```
 /
-├── index.html           # Landing page (profile, bio, all content previews)
+├── index.html           # THE MUSEUM — the landing page. Entry point for the 3D gallery.
+├── home.html            # The text site (profile, bio, all content previews).
+│                        #   Was index.html; the museum took the root.
+├── museum.html          # Redirect stub → / , so links shared before the swap survive
 ├── writing.html         # Essays listing with tag filter
 ├── essay.html           # Single essay viewer (?slug=...)
 ├── math.html            # Math notes listing
@@ -101,18 +104,30 @@ Dark mode is handled via `@media (prefers-color-scheme: dark)`.
 
 ## Known TODOs in the Codebase
 
-- `index.html` has a placeholder: `"If you see this, please remind me to update my website!!!"`
-- The Publications section, research bio, awards list, and past experience are all commented out in `index.html` — they exist but are hidden
-- `swe_interview` essay ends with `"To be finished."`
+- `swe_interview` (in `essay.json`) ends with `"To be finished."`, its `title` field is
+  the raw filename rather than the real title inside the body, and its `body` still
+  carries unstripped front-matter
+- The three `notes/*.pdf` links in `math.json` point at a `notes/` directory that does
+  not exist — all three are dead
+- Tag chips on essay/note pages navigate to `writing.html?tag=X` / `math.html?tag=X`,
+  but neither listing page ever reads `?tag=`, so the filter silently does nothing
+- `landing.html` is an unlinked ancestor of the old hero. Nothing points at it
 
-## The 3D Museum (`museum.html`)
+Do NOT reintroduce the old claim that the bio, awards and past experience are
+commented out in the landing page — that was true before the revamp and is not
+true now. The awards list (MCM/ICM, USAMO) was deleted outright and survives only
+in commit `02f07b7`; it is not hidden anywhere in the working tree.
+
+## The 3D Museum (`index.html`)
 
 A walkable first-person gallery rendering the same JSON content as the flat pages.
+**It is the site's landing page.** The text site lives at `home.html`, and
+`museum.html` is a redirect stub kept only so previously-shared links still work.
 **Still no build step** — three.js r169 is vendored at `museum/vendor/` and resolved
 through an `<script type="importmap">` in `museum.html`.
 
 ```
-museum.html              # entry: import map, canvas, WebGL/no-JS fallbacks to index.html
+index.html               # entry: import map, canvas, WebGL/no-JS fallbacks to home.html
 museum/
 ├── config.js            # SINGLE SOURCE OF TRUTH — THEMES, MODE, DIMS, ROOMS, TUNING
 ├── content.js           # fetches the existing *.json, normalises to one Exhibit shape
@@ -121,7 +136,8 @@ museum/
 ├── architecture.js      # room shells, doorways, merged geometry, outlines, colliders
 ├── decor.js             # prop framework + ctx toolkit; dispatches to themes/
 ├── themes/*.js          # one file per room character (garden, lab, study, chalk, …)
-├── exhibits.js          # framed plates, canvas-texture labels, raycast targets
+├── exhibits.js          # framed plates + link lecterns, canvas labels, raycast targets
+├── portal.js            # the Open Reality gateway in the atrium (proximity, not raycast)
 ├── controls.js          # pointer-lock WASD, circle-vs-AABB collision, touch, keyboard-only
 ├── ui.js                # DOM overlay: loader, reader panel, room map, day/night, perf
 ├── museum.css           # overlay styles; day is default, night via [data-museum-mode]
@@ -153,6 +169,44 @@ Each room's `source` key names the array `content.js` fills in.
 **The core design decision:** 3D handles *navigation*, DOM handles *reading*.
 Walking up to a plate and pressing `E` opens a real HTML panel — text stays
 selectable, zoomable, screen-reader accessible, and crisp at any resolution.
+
+**Links are lecterns, not plates.** An exhibit with `kind: 'link'` is somewhere to
+*go*, not something to read, so `exhibits.js` gives it a standing lectern with a lit
+button instead of a wall card, and `main.js`'s `openFocused()` opens its URL in a new
+tab instead of opening the reader. That `window.open` call **must stay synchronous
+inside the keydown/click handler** — browsers only permit it during the user-activation
+window, so deferring it to the frame loop, a timeout or a promise gets it silently
+blocked. If it is blocked anyway, the reader panel opens as the fallback, because it
+already renders `href` as a real `target="_blank"` anchor. `mailto:`/`tel:` go via
+`location.href`, or they strand an `about:blank` tab behind the mail client.
+
+Lecterns stand on the floor, so unlike wall plates they are solid: `buildExhibits`
+returns a `colliders` array that `main.js` folds into the player's collider list, and
+`integration-test.mjs` asserts no prop and no walkway overlaps one.
+
+**The Open Reality gateway** (`portal.js`) stands in the atrium at `z = -5.85`,
+`x ∈ [1.30, 2.80]` — one lane right of the flagstone path, deliberately clear of the
+`x = 0` centre line the smoke test requires to stay walkable. It advertises the
+owner's company and opens open-reality.io in a new tab when you walk through it.
+
+It is **not an exhibit and never a raycast target** — both suites assert one target
+per exhibit, so adding it to `exhibits.targets` would fail the build. It triggers on
+*zone occupancy* (`x` in the aperture, `z` within ±0.35 of the threshold), latched so
+it fires once per pass and re-arms only after you leave. Because it is occupancy and
+not plane-crossing, a **teleport straight over the slab does not fire it** — that is
+intentional, and it is why the room map can never trip it. Walking through it in
+either direction counts as a pass.
+
+Note `window.open(url, '_blank', 'noopener')` returns `null` **even on success** (the
+spec severs the WindowProxy), so it is impossible to distinguish "opened" from
+"blocked". Both `portal.js` and `main.js` therefore call `window.open(url, '_blank')`
+and set `opened.opener = null` on the next statement instead. Do not "fix" this back.
+
+**Themes must derive their layout from `ctx.anchors`, never from written-down
+coordinates.** `themes/library.js` used to hardcode where the six contact plates fell;
+adding a seventh link silently slid the bookcases over them. It now computes its bays
+from the anchors it is handed, so the room reflows with its own contents. Any theme
+that needs to know where exhibits land must do the same.
 
 **Performance rules — do not regress these:**
 - No shadow maps. Lights are hemisphere + ambient + one camera-following directional.

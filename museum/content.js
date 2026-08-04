@@ -2,8 +2,13 @@
 // single Exhibit shape so the 3D layer never has to care where data came from.
 //
 // Exhibit = {
-//   id, kind, title, meta, blurb, tags[], href?, bodyHtml?, external?, image?
+//   id, kind, title, meta, blurb, tags[], href?, bodyHtml?, external?, image?,
+//   links?   // [{title, url, description}] — math notes only
 // }
+//
+// `kind` decides how exhibits.js renders it: everything is a framed wall plate
+// except `kind: 'link'`, which becomes a standing lectern with a pressable
+// button that opens `href` in a new tab.
 
 import { ROOMS, THEMES } from './config.js';
 
@@ -57,7 +62,10 @@ const ABOUT = [
       <p>I care about loving God and people.</p>
       <p>Undergraduate student at the <strong>University of Illinois Urbana-Champaign</strong>,
       studying Computer Science and Physics.</p>
-      <p>I'm currently an independent researcher in <strong>reinforcement learning and 3D vision
+      <p>I'm the founder of <strong><a href="https://www.open-reality.io">Open Reality</a></strong>
+      — a spatial AI platform that maps physical spaces in real time from a phone camera and lets
+      AI agents reason and act in 3D. It won $20K in prizes at HackIllinois 2026.</p>
+      <p>I'm also an independent researcher in <strong>reinforcement learning and 3D vision
       for LLMs</strong>. I want to build smart, autonomous, tool-using agents.</p>`,
     image: 'museum/tex/portrait.png',
   },
@@ -90,6 +98,13 @@ const ABOUT = [
   },
 ];
 
+// The Reading Room's links. These do not hang on the wall as cards — exhibits.js
+// gives every `kind: 'link'` exhibit a standing lectern with a lit button you
+// walk up to and press, and pressing it opens the URL in a new tab.
+//
+// Adding or removing one reflows this room's anchors (architecture.js derives
+// pitch from the exhibit count), which is why themes/library.js reads
+// `ctx.anchors` instead of hardcoding where the bays fall.
 const CONTACT = [
   { id: 'c-email', kind: 'link', title: 'Email',     meta: 'davidz10@illinois.edu', href: 'mailto:davidz10@illinois.edu', external: true, blurb: 'The most reliable way to reach me.' },
   { id: 'c-cv',    kind: 'link', title: 'CV',        meta: 'PDF',                   href: 'assets/cv.pdf',                 external: true, blurb: 'Curriculum vitae.' },
@@ -97,6 +112,7 @@ const CONTACT = [
   { id: 'c-gh',    kind: 'link', title: 'GitHub',    meta: 'bdavidzhang',           href: 'https://github.com/bdavidzhang', external: true, blurb: 'Code, experiments, this museum.' },
   { id: 'c-li',    kind: 'link', title: 'LinkedIn',  meta: 'David Zhang',           href: 'https://www.linkedin.com/in/bdavidzhang/', external: true, blurb: 'Professional history.' },
   { id: 'c-yt',    kind: 'link', title: 'YouTube',   meta: '@bdavidzhang',          href: 'https://www.youtube.com/@bdavidzhang', external: true, blurb: 'The podcast lives here.' },
+  { id: 'c-ig',    kind: 'link', title: 'Instagram', meta: '@david7hang',           href: 'https://www.instagram.com/david7hang/', external: true, blurb: 'Life outside the research.' },
 ];
 
 // --- normalisers -------------------------------------------------------------

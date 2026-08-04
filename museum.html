@@ -2,125 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>The Museum · David Zhang</title>
-<meta name="description" content="A walkable 3D museum of David Zhang's research, essays, mathematics and podcast.">
-
-<link rel="preload" href="museum/vendor/three.module.min.js" as="script" crossorigin>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The museum moved to the site root. This stub only exists so previously
+     shared /museum.html links keep working. The meta refresh does the move
+     without JavaScript; the link below covers anyone it doesn't move. -->
+<meta http-equiv="refresh" content="0; url=./">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://bdavidzhang.github.io/">
+<title>The Museum moved · David Zhang</title>
 <link rel="stylesheet" href="inter.css">
-<link rel="stylesheet" href="museum/museum.css">
-
-<style>
-  /* Day is the default for everyone; museum.css owns the night override via
-     [data-museum-mode="night"], which ui.js stamps on <html>. Deliberately no
-     prefers-color-scheme here — the museum's mode is an explicit, remembered
-     choice, and an OS branch would fight it. */
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ede9e1; }
-  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* `display` here is an ID selector, which outranks the UA's
-     `[hidden] { display: none }`. Without this guard the error card renders
-     over the canvas unconditionally and the museum looks broken while it is
-     in fact running underneath. Keep the [hidden] rule adjacent to the rule
-     that necessitates it. */
-  #boot-error[hidden], #no-webgl[hidden] { display: none; }
-
-  #boot-error, #no-webgl {
-    position: fixed; inset: 0; display: grid; place-content: center; gap: .75rem;
-    font-family: 'Inter', system-ui, sans-serif; text-align: center; padding: 2rem;
-    background: var(--nc-bg-1, #fff); color: var(--nc-tx-2, #1a1a1a); z-index: 999;
-  }
-  #boot-error a, #no-webgl a { color: var(--nc-lk-1, #0070f3); }
-  #boot-error { max-width: 46rem; margin: 0 auto; }
-  #boot-error p { max-width: 40rem; line-height: 1.55; }
-  #boot-detail {
-    text-align: left; white-space: pre-wrap; word-break: break-word;
-    font-family: ui-monospace, Consolas, monospace; font-size: .78rem; line-height: 1.5;
-    background: var(--nc-bg-2, #f6f8fa); border: 1px solid var(--nc-bg-3, #e5e7eb);
-    border-radius: 6px; padding: .9rem 1rem; max-height: 40vh; overflow: auto;
-  }
-  .boot-hint { font-size: .82rem; opacity: .65; }
-</style>
-
-<script type="importmap">
-{
-  "imports": {
-    "three": "./museum/vendor/three.module.min.js",
-    "three/addons/": "./museum/vendor/addons/"
-  }
-}
-</script>
+<link rel="stylesheet" href="newmin.css">
 </head>
 <body>
-
-<canvas id="scene" aria-label="Three-dimensional museum. Use the room map or the text site if you prefer."></canvas>
-
-<!-- Crawlable, no-JS and no-WebGL fallback. Also the accessible route to the same content. -->
-<noscript>
-  <div id="no-webgl">
-    <h1>The Museum needs JavaScript</h1>
-    <p>Everything here is also available as a plain text site.</p>
-    <p><a href="index.html">Go to bdavidzhang.github.io →</a></p>
-  </div>
-</noscript>
-
-<div id="boot-error" hidden>
-  <h1>The museum didn't load</h1>
-  <p id="boot-reason">Something went wrong starting the 3D view.</p>
-  <pre id="boot-detail" hidden></pre>
-  <p><a href="index.html">Visit the text version instead →</a></p>
-  <p class="boot-hint">If this looks like a bug, the detail above is what to report.</p>
-</div>
-
-<script type="module">
-  // Fail loudly and specifically. A blank canvas or a vague "something broke"
-  // is impossible to act on, so every failure path names itself here.
-  const errBox = document.getElementById('boot-error');
-  const reason = document.getElementById('boot-reason');
-  const detail = document.getElementById('boot-detail');
-
-  function fail(msg, err) {
-    reason.textContent = msg;
-    if (err) {
-      detail.hidden = false;
-      detail.textContent = (err.stack || err.message || String(err)).slice(0, 900);
-      console.error('[museum]', err);
-    }
-    errBox.hidden = false;
-  }
-
-  // three.js r169 needs WebGL2 specifically — a WebGL1-only context would pass a
-  // naive check and then die inside the renderer with a far less useful message.
-  function probe() {
-    const canvas = document.createElement('canvas');
-    let gl2 = null;
-    try { gl2 = canvas.getContext('webgl2'); } catch (e) { /* some builds throw */ }
-    if (gl2) return { ok: true };
-
-    let gl1 = null;
-    try {
-      gl1 = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    } catch (e) { /* ignore */ }
-
-    if (gl1) {
-      return { ok: false, msg: 'This browser has WebGL 1 but not WebGL 2, which the museum needs.' };
-    }
-    return {
-      ok: false,
-      msg: 'WebGL is unavailable in this browser. On Linux this is usually hardware '
-         + 'acceleration being off — check chrome://gpu, and try launching with '
-         + '--enable-unsafe-swiftshader if you have no GPU.',
-    };
-  }
-
-  const result = probe();
-  if (!result.ok) {
-    fail(result.msg);
-  } else {
-    import('./museum/main.js').catch((err) => {
-      fail('The museum code failed to start. Details:', err);
-    });
-  }
-</script>
-
+  <h1>The Museum moved</h1>
+  <p><a href="./">Continue to the museum →</a></p>
 </body>
 </html>

@@ -206,6 +206,36 @@ if (intrusions.length) {
   console.log('  no prop intrudes on any exhibit plate');
 }
 
+// Link exhibits stand on the floor as lecterns, so unlike a wall plate they can
+// be fouled by furniture rather than just covered by it. The plate-clearance
+// pass above only guards the wall band, so check the floor footprints directly.
+console.log('\n=== lectern footprints ===');
+const lecterns = exhibits.colliders || [];
+const blocked = [];
+
+const overlaps = (a, b) =>
+  a.minX < b.maxX && b.minX < a.maxX && a.minZ < b.maxZ && b.minZ < a.maxZ;
+
+for (let i = 0; i < lecterns.length; i++) {
+  const L = lecterns[i];
+  if (!(L.maxX > L.minX) || !(L.maxZ > L.minZ)) {
+    blocked.push(`lectern ${i} has an inverted or degenerate footprint`);
+    continue;
+  }
+  // the centre line has to stay walkable end to end
+  if (L.minX < 0 && L.maxX > 0) blocked.push(`lectern ${i} straddles the x=0 walkway`);
+  for (const d of decor.colliders) {
+    if (overlaps(L, d)) blocked.push(`lectern ${i} overlaps a prop`);
+  }
+  for (let j = i + 1; j < lecterns.length; j++) {
+    if (overlaps(L, lecterns[j])) blocked.push(`lecterns ${i} and ${j} overlap`);
+  }
+}
+
+console.log(`  ${lecterns.length} lectern(s) placed`);
+if (blocked.length) for (const s of [...new Set(blocked)]) console.log(`  !! ${s}`);
+else console.log('  every lectern stands clear of the props and the walkway');
+
 console.log('\n=== update loop ===');
 const cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 140);
 cam.position.set(0, DIMS.eyeH, -2);
@@ -229,6 +259,7 @@ if (empty.length) problems.push(`empty rooms: ${empty.map((e) => e.id).join(', '
 if (worst > 120) problems.push(`${worst} drawables per frame is too many`);
 if (bytes / 1048576 > 40) problems.push(`${(bytes / 1048576).toFixed(1)} MB of textures is too much`);
 if (intrusions.length) problems.push(`${new Set(intrusions).size} prop(s) cover an exhibit plate`);
+if (blocked.length) problems.push(`${new Set(blocked).size} lectern placement problem(s)`);
 
 console.log(problems.length ? `\nPROBLEMS:\n  - ${problems.join('\n  - ')}` : '\nAll integration checks clean.');
 process.exit(problems.length ? 1 : 0);

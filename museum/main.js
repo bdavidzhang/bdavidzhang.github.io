@@ -9,7 +9,8 @@ import { buildExhibits } from './exhibits.js';
 import { buildDecor } from './decor.js';
 import { createControls } from './controls.js';
 import { createUI } from './ui.js';
-import { ROOMS, TUNING, DIMS, roomCenterZ, roomIndexAtZ } from './config.js';
+import { createPortal } from './portal.js';
+import { ROOMS, TUNING, DIMS, roomCenterZ, roomIndexAtZ, themeFor } from './config.js';
 
 const canvas = document.getElementById('scene');
 
@@ -37,13 +38,26 @@ async function boot() {
   const exhibits = buildExhibits(rooms, world);
   engine.scene.add(exhibits.group);
 
+  // The Open Reality gateway in the atrium. Proximity-triggered, never an
+  // exhibit and never a raycast target — walking through it is the interaction.
+  // Built before createControls so its legs make it into the collider list.
+  // portal: { group, colliders[], update(dt, playerPosition), dispose() }
+  const portal = createPortal({
+    THREE,
+    room: rooms[0],
+    roomGroup: world.roomGroups[0],
+    theme: themeFor(0),
+    ui,
+  });
+
   ui.setProgress(0.85, 'Calibrating');
   // controls: { update(dt), lock(), unlock(), get isLocked, teleportTo(x,z,yaw), setEnabled(b), dispose() }
   const controls = createControls({
     camera: engine.camera,
     domElement: canvas,
-    // props are solid too, so the player walks around planters and desks
-    colliders: world.colliders.concat(decor.colliders),
+    // props are solid too, so the player walks around planters and desks — and
+    // around the link lecterns, which stand on the floor rather than on a wall
+    colliders: world.colliders.concat(decor.colliders, exhibits.colliders, portal.colliders),
     isMobile: engine.isMobile,
   });
 
@@ -64,10 +78,40 @@ async function boot() {
     return null;
   }
 
+  /**
+   * A `link` exhibit is a door, not a page: it leaves for its URL instead of
+   * opening the reader.
+   *
+   * This runs synchronously inside the keydown/click handler on purpose.
+   * `window.open` is only permitted during the browser's user-activation window,
+   * so calling it any later — from the frame loop, a timeout, a promise — is
+   * silently blocked. If it is blocked anyway, fall through to the reader panel,
+   * which already renders `href` as a real target="_blank" anchor the visitor
+   * can click themselves.
+   */
   function openFocused() {
     if (!focused) return;
+    const ex = focused.exhibit;
+
+    if (ex.kind === 'link' && ex.href) {
+      // mailto:/tel: hand off to an external handler; opening them in a tab
+      // strands an about:blank behind the mail client
+      if (/^(mailto|tel):/i.test(ex.href)) { location.href = ex.href; return; }
+      let win = null;
+      // Deliberately NOT the 'noopener' feature string: with it the spec says
+      // window.open returns null even when it succeeded, so there is no way left
+      // to tell "opened" from "blocked". Open normally and sever `opener` on the
+      // next statement instead — synchronous, long before the new document can
+      // run any script of its own.
+      try {
+        win = window.open(ex.href, '_blank');
+        if (win) win.opener = null;
+      } catch { /* blocked — fall through to the reader */ }
+      if (win) return;
+    }
+
     controls.unlock();
-    ui.openReader(focused.exhibit);
+    ui.openReader(ex);
   }
 
   ui.onActivate(openFocused);
@@ -98,6 +142,7 @@ async function boot() {
   engine.onFrame((dt, elapsed) => {
     controls.update(dt);
     decor.update(dt, elapsed);
+    portal.update(dt, engine.camera.position);
     exhibits.update(dt, engine.camera, focused && focused.object);
 
     // raycast at ~20Hz rather than every frame; it is never the bottleneck but
@@ -130,7 +175,7 @@ async function boot() {
   ui.onEnter(() => { if (!engine.isMobile) controls.lock(); });
 
   // expose for debugging / the perf overlay
-  window.__museum = { engine, world, decor, exhibits, controls, ui, rooms };
+  window.__museum = { engine, world, decor, exhibits, portal, controls, ui, rooms };
 }
 
 boot().catch((err) => {

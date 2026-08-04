@@ -277,10 +277,10 @@ try {
   console.log(`  FAIL controls threw — ${err.message}`);
 }
 
-console.log('\nmuseum.html');
+console.log('\nindex.html (the museum entry)');
 try {
   const { readFileSync } = await import('node:fs');
-  const html = readFileSync(new URL('../museum.html', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
   // An id/class rule that sets `display` outranks the UA's
   // `[hidden] { display: none }`, so an element can carry `hidden` and still
@@ -345,8 +345,8 @@ try {
     return null;
   });
 } catch (err) {
-  failures.push(`museum.html: ${err.message}`);
-  console.log(`  FAIL museum.html checks threw — ${err.message}`);
+  failures.push(`index.html: ${err.message}`);
+  console.log(`  FAIL index.html checks threw — ${err.message}`);
 }
 
 console.log('\nui');

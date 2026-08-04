@@ -217,7 +217,7 @@ export const ROOMS = [
     id: 'podcast',
     theme: 'studio',
     title: 'Podcast Studio',
-    subtitle: 'David Talks With…',
+    subtitle: 'David Talks With… · popularizing without compromising serious science',
     source: 'podcast',
   },
   {

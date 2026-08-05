@@ -137,7 +137,7 @@ museum/
 ├── decor.js             # prop framework + ctx toolkit; dispatches to themes/
 ├── themes/*.js          # one file per room character (garden, lab, study, chalk, …)
 ├── exhibits.js          # framed plates + link lecterns, canvas labels, raycast targets
-├── portal.js            # the Open Reality gateway in the atrium (proximity, not raycast)
+├── portal.js            # the Open Reality wall in the atrium (proximity, not raycast)
 ├── controls.js          # pointer-lock WASD, circle-vs-AABB collision, touch, keyboard-only
 ├── ui.js                # DOM overlay: loader, reader panel, room map, day/night, perf
 ├── museum.css           # overlay styles; day is default, night via [data-museum-mode]
@@ -184,23 +184,39 @@ Lecterns stand on the floor, so unlike wall plates they are solid: `buildExhibit
 returns a `colliders` array that `main.js` folds into the player's collider list, and
 `integration-test.mjs` asserts no prop and no walkway overlaps one.
 
-**The Open Reality gateway** (`portal.js`) stands in the atrium at `z = -5.85`,
-`x ∈ [1.30, 2.80]` — one lane right of the flagstone path, deliberately clear of the
-`x = 0` centre line the smoke test requires to stay walkable. It advertises the
-owner's company and opens open-reality.io in a new tab when you walk through it.
+**The Open Reality wall** (`portal.js`) is the whole entrance wall of the atrium —
+the solid `k === 0` boundary whose interior face is at `z = 0`, blank by default.
+It carries the wordmark, the tagline, a lit central threshold, and two boards: the
+owner's founder statement and what the platform does. Walking up to it opens
+open-reality.io in a new tab.
+
+**The wall stays solid and the visitor never passes through it.** `architecture.js`
+already emits its collider, so `portal.js` returns `colliders: []` and every piece of
+relief is shallower than the 0.48 m the player is stopped at. Do not make it passable:
+if the tab is blocked, a walk-through would strand the visitor outside the building.
 
 It is **not an exhibit and never a raycast target** — both suites assert one target
 per exhibit, so adding it to `exhibits.targets` would fail the build. It triggers on
-*zone occupancy* (`x` in the aperture, `z` within ±0.35 of the threshold), latched so
-it fires once per pass and re-arms only after you leave. Because it is occupancy and
-not plane-crossing, a **teleport straight over the slab does not fire it** — that is
-intentional, and it is why the room map can never trip it. Walking through it in
-either direction counts as a pass.
+*zone occupancy* (`|x| ≤ 1.96`, `z ∈ [-1.15, 0.60]`), latched so it fires once per
+entry and re-arms only after the visitor leaves.
+
+**The trigger must stay nearer the wall than the spawn point.** `engine.js` spawns the
+camera at `z = -1.8` facing away; the zone's near edge is `z = -1.145`, leaving 0.65 m
+of slack. Move either number carelessly and booting the museum opens a tab on its own.
+Because it is occupancy and not plane-crossing, a teleport straight past it does not
+fire it — which is why the room map can never trip it.
 
 Note `window.open(url, '_blank', 'noopener')` returns `null` **even on success** (the
 spec severs the WindowProxy), so it is impossible to distinguish "opened" from
 "blocked". Both `portal.js` and `main.js` therefore call `window.open(url, '_blank')`
 and set `opened.opener = null` on the next statement instead. Do not "fix" this back.
+
+**The portrait easter egg.** An exhibit may carry `imageAlt` alongside `image`;
+`exhibits.js` shows it only while that plate is focused, so staring at the portrait in
+the atrium turns it into the lightsaber shot — the museum's version of the hover swap
+on the text site. Both textures load independently and either may arrive first or not
+at all, so the desired state is a `wantAlt` flag and `showPortrait()` reconciles
+whenever it or a texture changes. Do not rewrite it to assume load order.
 
 **Themes must derive their layout from `ctx.anchors`, never from written-down
 coordinates.** `themes/library.js` used to hardcode where the six contact plates fell;

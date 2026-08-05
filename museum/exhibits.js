@@ -547,15 +547,15 @@ export function buildExhibits(rooms, world) {
 
   // --- portrait swap ---------------------------------------------------------
 
-  function applyPortrait(plate, exhibit, hue) {
+  /** Composite one portrait file into a plate-ready texture. */
+  function loadPortrait(plate, exhibit, hue, src, onReady) {
     let url;
-    try { url = new URL(exhibit.image, BASE).href; } catch { return; }
+    try { url = new URL(src, BASE).href; } catch { return; }
 
     loader.load(url, (tex) => {
       if (disposed || plate.disposed) { tex.dispose(); return; }
       const img = tex.image;
       const drawable = img && img.width > 0 && img.height > 0;
-      const old = plate.faceMat.map;
 
       let next = null;
       if (drawable) {
@@ -573,10 +573,46 @@ export function buildExhibits(rooms, world) {
       }
 
       textures.add(next);
-      plate.faceMat.map = next;
-      plate.faceMat.needsUpdate = true;
-      if (old) { textures.delete(old); old.dispose(); }
-    }, undefined, () => { /* keep the generated card */ });
+      onReady(next);
+    }, undefined, () => { /* keep whatever the plate is already showing */ });
+  }
+
+  /** Show whichever portrait the plate's current focus state calls for. */
+  function showPortrait(plate) {
+    const want = (plate.wantAlt && plate.portraitAlt) || plate.portraitBase;
+    if (!want || plate.faceMat.map === want) return;
+    plate.faceMat.map = want;
+    plate.faceMat.needsUpdate = true;
+  }
+
+  /**
+   * The portrait, and its easter egg. `image` is the plain photo; the optional
+   * `imageAlt` only appears while you are looking at the plate — the 3D
+   * equivalent of the hover swap on the text site, where the cursor over the
+   * photo turns it into the lightsaber one.
+   *
+   * Both load independently and either may arrive first (or never), so the
+   * desired state is a flag and `showPortrait` reconciles whenever that changes.
+   */
+  function applyPortrait(plate, exhibit, hue) {
+    loadPortrait(plate, exhibit, hue, exhibit.image, (tex) => {
+      plate.portraitBase = tex;
+      const card = plate.cardTex;
+      showPortrait(plate);
+      // the drawn card is dead the moment a real portrait exists
+      if (card && card !== tex) {
+        textures.delete(card);
+        card.dispose();
+        plate.cardTex = null;
+      }
+    });
+
+    if (exhibit.imageAlt) {
+      loadPortrait(plate, exhibit, hue, exhibit.imageAlt, (tex) => {
+        plate.portraitAlt = tex;
+        showPortrait(plate);
+      });
+    }
   }
 
   // --- one plate -------------------------------------------------------------
@@ -634,6 +670,10 @@ export function buildExhibits(rooms, world) {
       disposed: false,
       liftY: 0,         // a plate leans out of the wall…
       liftZ: LIFT_DIST,
+      cardTex,          // the drawn card, replaced once a portrait loads
+      portraitBase: null,
+      portraitAlt: null,
+      wantAlt: false,   // true while this plate is the focused one
     };
     face.userData.plate = plate;
 
@@ -787,10 +827,17 @@ export function buildExhibits(rooms, world) {
     const next = (focusedObject && focusedObject.userData && focusedObject.userData.plate) || null;
 
     if (next !== focusPlate) {
-      if (focusPlate) { focusPlate.target = 0; wake(focusPlate); }
+      if (focusPlate) {
+        focusPlate.target = 0;
+        focusPlate.wantAlt = false;     // look away and the photo goes back
+        showPortrait(focusPlate);
+        wake(focusPlate);
+      }
       focusPlate = next;
       if (focusPlate) {
         focusPlate.target = 1;
+        focusPlate.wantAlt = true;      // …look at it and the easter egg shows
+        showPortrait(focusPlate);
         // per-plate frame material, made once and kept, so two plates can fade
         // in opposite directions without sharing an emissive
         if (!focusPlate.hotMat) {

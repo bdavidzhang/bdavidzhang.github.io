@@ -1313,7 +1313,9 @@
 .mus-portal-note {
   margin: 0.85rem 0 0;
   font-size: 0.82rem;
+  line-height: 1.5;
   color: var(--mus-tx-3);
+  text-wrap: pretty;
 }
 
 .mus-portal-go {

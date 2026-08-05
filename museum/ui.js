@@ -421,12 +421,13 @@ export function createUI({ isMobile = false } = {}) {
   // ==========================================================================
   // 6b — portal prompt
   // ==========================================================================
-  // The popup fallback for museum/portal.js. Stepping through the Atrium's
-  // gateway tries window.open() straight away — walking is keydown, which grants
-  // transient activation, so it usually just works. When a popup blocker eats it
-  // there is no second chance from that gesture, so this panel takes over: the
-  // visitor's click (or Enter on the auto-focused link) is itself a fresh
-  // gesture, and a gesture-driven open is never blocked.
+  // The popup fallback for museum/portal.js. Walking up to the Open Reality
+  // installation on the Atrium's entrance wall tries window.open() straight away
+  // — walking is keydown, which grants transient activation, so it usually just
+  // works. When a popup blocker eats it there is no second chance from that
+  // gesture, so this panel takes over: the visitor's click (or Enter on the
+  // auto-focused link) is itself a fresh gesture, and a gesture-driven open is
+  // never blocked.
 
   const portal = el('div', 'mus-portal');
   portal.hidden = true;
@@ -442,11 +443,13 @@ export function createUI({ isMobile = false } = {}) {
   portalClose.type = 'button';
   portalClose.setAttribute('aria-label', 'Stay in the museum');
 
-  const portalKind = el('p', 'mus-portal-kind', 'Through the portal');
+  const portalKind = el('p', 'mus-portal-kind', 'Leaving the museum');
   const portalTitle = el('h2', 'mus-portal-title', '');
   portalTitle.id = 'mus-portal-title';
   const portalTagline = el('p', 'mus-portal-tagline', '');
-  const portalNote = el('p', 'mus-portal-note', "David Zhang's company — he is its founder.");
+  // First person, the same line the wall itself carries — see PORTAL_BRAND.
+  const portalNote = el('p', 'mus-portal-note',
+    "I'm currently the founder of Open Reality, working on it full time.");
 
   // An anchor, not a button: a plain link with target=_blank is the one control
   // every browser lets through, and rel carries the opener protection outright.

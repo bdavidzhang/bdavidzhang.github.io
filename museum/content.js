@@ -3,7 +3,8 @@
 //
 // Exhibit = {
 //   id, kind, title, meta, blurb, tags[], href?, bodyHtml?, external?, image?,
-//   links?   // [{title, url, description}] — math notes only
+//   imageAlt?, // swapped in while the plate is focused (the portrait easter egg)
+//   links?     // [{title, url, description}] — math notes only
 // }
 //
 // `kind` decides how exhibits.js renders it: everything is a framed wall plate
@@ -68,6 +69,9 @@ const ABOUT = [
       <p>I'm also an independent researcher in <strong>reinforcement learning and 3D vision
       for LLMs</strong>. I want to build smart, autonomous, tool-using agents.</p>`,
     image: 'museum/tex/portrait.png',
+    // Only shows while you are looking at the plate — the museum's version of
+    // the hover swap on the text site.
+    imageAlt: 'museum/tex/portrait_alt.png',
   },
   {
     id: 'about-work',

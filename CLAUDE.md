@@ -138,7 +138,7 @@ museum/
 ├── themes/*.js          # one file per room character (garden, lab, study, chalk, …)
 ├── exhibits.js          # framed plates + link lecterns, canvas labels, raycast targets
 ├── portal.js            # the Open Reality wall in the atrium (proximity, not raycast)
-├── controls.js          # pointer-lock WASD, circle-vs-AABB collision, touch, keyboard-only
+├── controls.js          # pointer-lock WASD, circle-vs-AABB collision, tap-to-walk, keyboard-only
 ├── ui.js                # DOM overlay: loader, reader panel, room map, day/night, perf
 ├── museum.css           # overlay styles; day is default, night via [data-museum-mode]
 ├── smoke-test.mjs       # headless contract tests — `node museum/smoke-test.mjs`
@@ -165,6 +165,36 @@ use `ctx.rng()` rather than `Math.random()` so props land identically each load.
 **Rooms are data.** Add or reorder entries in `ROOMS` in `config.js`; geometry,
 colliders, anchors, the map UI and `#hash` deep links all follow automatically.
 Each room's `source` key names the array `content.js` fills in.
+
+**Phones navigate by tapping** — the Google Earth gesture. A tap is projected onto
+the floor plane, a ring is dropped where it landed, and the ordinary velocity +
+collision integrator walks the visitor over, swinging the view onto the bearing
+as it goes. There is deliberately **no path-finding**: you walk the straight line
+and slide along whatever you meet. A navmesh would have to be rebuilt every time
+someone adds an entry to `ROOMS`, and in an enfilade of rectangular rooms the
+straight line is the honest reading of "go over there". When the line is beaten
+by geometry, `NAV_STALL` seconds of going nowhere abandons the walk rather than
+leaving the visitor pressed into the plaster.
+
+`walkToScreen` clamps **along the bearing first, into the building second**.
+A near-horizon tap puts the floor point a hundred metres away; squaring that into
+the room before shortening it swings the walk round to face down the enfilade
+instead of where the visitor actually pointed. Do not swap those two clamps back.
+
+**controls.js walks, main.js decides what a tap means.** A tap on an exhibit
+already within `TUNING.interactDist` opens it; anything else is somewhere to walk
+to. That split is why `controls.consumeTap()` exists: it is true exactly once per
+tap, so the click a browser synthesises after a look-drag or a shove on the walk
+pad never gets read as a destination. The whole gesture rides on the click that
+follows a stationary touch — the same one the museum has always used to open a
+plate — so `touchstart` must stay passive and must never `preventDefault`.
+
+**The walk pad no longer appears on touch-down.** It shares the left half of the
+screen with tap-to-walk, and a stick that flashes up under every tap reads as a
+misfire, so `update()` reveals it after `STICK_HOLD`, or the first drag past the
+tap slop does — and that drag re-centres the stick on where the thumb committed,
+so it starts from zero instead of jumping. Dragging to look also clears
+`navFace`: the visitor keeps walking to the tapped spot but gets their head back.
 
 **The core design decision:** 3D handles *navigation*, DOM handles *reading*.
 Walking up to a plate and pressing `E` opens a real HTML panel — text stays

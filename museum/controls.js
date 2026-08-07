@@ -8,12 +8,20 @@
 //
 // The player is a circle of radius DIMS.bodyR in XZ; the world hands us a flat
 // list of axis-aligned boxes to slide against.
+//
+// On a phone there is a third way to move, and it is the one most visitors
+// reach for first: tap where you want to be, the way you would on Google Earth
+// or in Street View. A tap is projected onto the floor plane, a ring is dropped
+// there, and the same velocity/collision integrator walks you over — so a
+// tapped walk slides along walls and around lecterns exactly like a driven one.
 
 import * as THREE from 'three';
-import { DIMS, TUNING, BUILDING_DEPTH } from './config.js';
+import { DIMS, TUNING, PALETTE, BUILDING_DEPTH } from './config.js';
 
 // --- module-scope scratch. update() allocates nothing. -----------------------
 const _wish = new THREE.Vector3();
+const _ray = new THREE.Raycaster();
+const _ndc = new THREE.Vector2();
 
 const PITCH_LIMIT = Math.PI / 2 - 0.05;
 const SPIKE = 150;      // browsers emit one absurd movementX/Y right after lock
@@ -25,6 +33,42 @@ const MAX_DT = 0.05;    // never integrate more than this in one step
 const STICK_SIZE = 116;
 const STICK_RADIUS = 46; // max knob travel, px
 const KNOB_SIZE = 46;
+
+// --- tap-to-walk -------------------------------------------------------------
+const TAP_MS = 320;     // longer than this and the touch was a press, not a tap
+const TAP_SLOP = 14;    // px a tap may wander before it counts as a drag
+const STICK_HOLD = 0.16;// s a still thumb waits before the stick appears at all
+const NAV_REACH = 16;   // m — the furthest one tap will carry you
+const NAV_ARRIVE = 0.45;// m — close enough; stop
+const NAV_SLOW = 1.8;   // m — start easing off the throttle
+const NAV_TURN = 6;     // how briskly the view swings onto the walked bearing
+const NAV_STALL = 0.5;  // s of getting nowhere before the walk is abandoned
+const NAV_CRAWL = 0.3;  // m/s that counts as getting nowhere
+const MARK_IN = 0.32;   // s the destination ring takes to settle
+const MARK_OUT = 0.28;  // s it takes to fade once the walk ends
+
+/**
+ * The ring dropped on the floor where a tap landed: the whole feedback loop for
+ * the gesture — that spot, on my way, arrived. One transparent mesh, hidden
+ * whenever nobody is walking, so it costs a draw call only while it is saying
+ * something.
+ */
+function buildMarker() {
+  const geo = new THREE.RingGeometry(0.26, 0.4, 44);
+  geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({
+    color: PALETTE.accent,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,          // it lies on the floor; never carve into it
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = 0.02;       // clear of the floor plane, so no z-fighting
+  mesh.renderOrder = 2;
+  mesh.visible = false;
+  return mesh;
+}
 
 export function createControls({ camera, domElement, colliders = [], isMobile = false }) {
   // --- state -----------------------------------------------------------------
@@ -51,6 +95,24 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
   let lookPy = 0;
   let joyX = 0;
   let joyY = 0;
+  let stickOn = false;   // the stick is only drawn once a touch stops being a tap
+  let holdT = 0;         // seconds a still thumb has been resting on the pad
+
+  // tap-to-walk: a destination in world XZ, plus the ring standing on it
+  const marker = buildMarker();
+  let navOn = false;
+  let navX = 0;
+  let navZ = 0;
+  let navFace = true;    // false once the visitor takes the view back by dragging
+  let navStall = 0;
+  let markT = 0;         // seconds since the ring landed
+  let markOut = -1;      // >= 0 while it is fading out
+
+  // one tap, one click: set at touchend, spent by main.js on the click that follows
+  let tapOk = false;
+  let tapX = 0;
+  let tapY = 0;
+  let tapAt = 0;
 
   // The building is a corridor of rooms running down -Z; these bounds keep the
   // player inside it even if a collider is missing somewhere.
@@ -91,6 +153,9 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     velZ = 0;
     moveId = null;
     lookId = null;
+    tapOk = false;
+    stopWalk();
+    hideMarker();       // a ring left standing behind a reader panel is a bug
     if (stick) hideStick();
   }
 
@@ -194,6 +259,7 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
   }
 
   function showStick(x, y) {
+    stickOn = true;
     stick.style.left = x + 'px';
     stick.style.top = y + 'px';
     stick.style.opacity = '1';
@@ -202,6 +268,8 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
   }
 
   function hideStick() {
+    stickOn = false;
+    holdT = 0;
     stick.style.opacity = '0';
     stick.classList.remove('is-active');
     knob.style.transform = 'translate(0px, 0px)';
@@ -209,6 +277,18 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
 
   function onTouchStart(e) {
     if (!enabled) return;
+    // A tap is one finger, briefly, going nowhere. A second finger on the glass
+    // is a gesture — pinch, two-thumb walk — and never a destination.
+    if (e.touches.length > 1) {
+      tapOk = false;
+    } else if (e.changedTouches.length === 1) {
+      const t = e.changedTouches[0];
+      tapOk = true;
+      tapX = t.clientX;
+      tapY = t.clientY;
+      tapAt = performance.now();
+    }
+
     const half = innerWidth * 0.5;
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
@@ -216,7 +296,11 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
         moveId = t.identifier;
         moveOx = t.clientX;
         moveOy = t.clientY;
-        showStick(moveOx, moveOy);
+        // Deliberately no showStick() here. The pad shares the left half of the
+        // screen with tap-to-walk, and a stick that flashes up under every tap
+        // reads as a misfire; update() reveals it after STICK_HOLD, or the first
+        // real drag does, whichever comes first.
+        holdT = 0;
       } else if (lookId === null) {
         lookId = t.identifier;
         lookPx = t.clientX;
@@ -229,15 +313,34 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     if (!enabled) return;
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (tapOk &&
+          (Math.abs(t.clientX - tapX) > TAP_SLOP || Math.abs(t.clientY - tapY) > TAP_SLOP)) {
+        tapOk = false;
+      }
+
       if (t.identifier === moveId) {
         let dx = t.clientX - moveOx;
         let dy = t.clientY - moveOy;
+        if (!stickOn) {
+          // still inside the slop: this touch may yet turn out to be a tap
+          if (Math.abs(dx) <= TAP_SLOP && Math.abs(dy) <= TAP_SLOP) continue;
+          // Re-centre on where the thumb committed, so the stick starts from
+          // zero instead of jumping to whatever the slop had accumulated.
+          moveOx = t.clientX;
+          moveOy = t.clientY;
+          dx = 0;
+          dy = 0;
+          showStick(moveOx, moveOy);
+        }
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > STICK_RADIUS) { const s = STICK_RADIUS / d; dx *= s; dy *= s; }
         joyX = dx / STICK_RADIUS;
         joyY = -dy / STICK_RADIUS; // screen-down is backwards
         knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
       } else if (t.identifier === lookId) {
+        // Looking around is the visitor taking the camera back. Keep walking to
+        // the tapped spot, but stop swinging their head toward it.
+        navFace = false;
         yaw -= (t.clientX - lookPx) * TUNING.touchLookSens;
         pitch -= (t.clientY - lookPy) * TUNING.touchLookSens;
         if (pitch > PITCH_LIMIT) pitch = PITCH_LIMIT;
@@ -250,6 +353,9 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
   }
 
   function onTouchEnd(e) {
+    // A press that sat there is not a tap either — that is someone resting a
+    // thumb on the pad, and lifting it must not fling them across the room.
+    if (tapOk && (e.type === 'touchcancel' || performance.now() - tapAt > TAP_MS)) tapOk = false;
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
       if (t.identifier === moveId) {
@@ -272,6 +378,148 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     domElement.addEventListener('touchmove', onTouchMove, { passive: false });
     domElement.addEventListener('touchend', onTouchEnd, { passive: true });
     domElement.addEventListener('touchcancel', onTouchEnd, { passive: true });
+  }
+
+  // ---------------------------------------------------------------------------
+  // tap-to-walk — the Google Earth gesture, indoors
+  // ---------------------------------------------------------------------------
+
+  /** Give the destination up. The ring fades rather than blinking out. */
+  function stopWalk() {
+    if (!navOn) return;
+    navOn = false;
+    navStall = 0;
+    if (marker.visible && markOut < 0) markOut = 0;
+  }
+
+  function hideMarker() {
+    marker.visible = false;
+    marker.material.opacity = 0;
+    markOut = -1;
+  }
+
+  /**
+   * Turn a point on the screen into a point on the floor and set off toward it.
+   *
+   * There is no path-finding, and deliberately so: you walk the straight line
+   * and slide along whatever you meet, which in an enfilade of rectangular
+   * rooms is the honest reading of "go over there" — tap a plate across the
+   * room and you end up standing in front of it, tap through a doorway and you
+   * walk the centre line into the next room. Anything cleverer would need a
+   * navmesh, and rooms are data here: it would have to be rebuilt every time
+   * someone adds an entry to ROOMS.
+   *
+   * A tap above the horizon has no floor under it. Rather than swallow it —
+   * tapping a picture hung high is a perfectly clear request — walk a short way
+   * along the bearing the visitor pointed at.
+   *
+   * Returns true when a destination was accepted.
+   */
+  function walkToScreen(clientX, clientY) {
+    if (!enabled) return false;
+
+    const rect = typeof domElement.getBoundingClientRect === 'function'
+      ? domElement.getBoundingClientRect()
+      : null;
+    const left = rect ? rect.left : 0;
+    const top = rect ? rect.top : 0;
+    const w = (rect && rect.width) || innerWidth;
+    const h = (rect && rect.height) || innerHeight;
+    if (!(w > 0) || !(h > 0)) return false;
+
+    _ndc.set(((clientX - left) / w) * 2 - 1, -(((clientY - top) / h) * 2 - 1));
+    // The camera's world matrix is refreshed at render time and this runs
+    // between frames, so bring it up to date or the ray leaves from last frame.
+    camera.updateMatrixWorld();
+    _ray.setFromCamera(_ndc, camera);
+
+    const o = _ray.ray.origin;
+    const d = _ray.ray.direction;
+    let tx;
+    let tz;
+    if (d.y < -1e-3) {
+      const t = -o.y / d.y;               // where the ray meets the floor, y = 0
+      tx = o.x + d.x * t;
+      tz = o.z + d.z * t;
+    } else {
+      const hl = Math.sqrt(d.x * d.x + d.z * d.z);
+      if (hl < 1e-4) return false;        // straight up: no bearing to walk
+      tx = posX + (d.x / hl) * NAV_REACH * 0.4;
+      tz = posZ + (d.z / hl) * NAV_REACH * 0.4;
+    }
+
+    const dx = tx - posX;
+    const dz = tz - posZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    // Tapping your own feet is how you stop, not a journey.
+    if (dist < NAV_ARRIVE) { stopWalk(); return false; }
+    // Shorten along the bearing first and clamp to the building second, never
+    // the other way round: a near-horizon tap lands the floor point a hundred
+    // metres off, and squaring it into the room before shortening it would
+    // swing the walk round to face down the enfilade instead of where the
+    // visitor actually pointed.
+    if (dist > NAV_REACH) {
+      const s = NAV_REACH / dist;
+      tx = posX + dx * s;
+      tz = posZ + dz * s;
+    }
+    // A tap on a wall lands on the floor plane *behind* it; pull the
+    // destination back inside so it is somewhere a body could stand.
+    const halfW = DIMS.roomW / 2 - DIMS.bodyR;
+    if (tx > halfW) tx = halfW;
+    else if (tx < -halfW) tx = -halfW;
+    if (tz > zNear) tz = zNear;
+    else if (tz < zFar) tz = zFar;
+
+    navX = tx;
+    navZ = tz;
+    navOn = true;
+    navFace = true;
+    navStall = 0;
+    markT = 0;
+    markOut = -1;
+    marker.position.set(tx, 0.02, tz);
+    // Prime the first frame of the landing rather than inheriting whatever the
+    // last fade-out left behind — update() would fix it, but only after a frame.
+    marker.scale.set(1.7, 1, 1.7);
+    marker.material.opacity = 0;
+    marker.visible = true;
+    return true;
+  }
+
+  /**
+   * True exactly once per tap, for the click a browser synthesises after a
+   * short, still touch. Drags, presses and multi-finger gestures never produce
+   * one, which is how main.js tells "take me there" from "I was looking round".
+   */
+  function consumeTap() {
+    const was = tapOk;
+    tapOk = false;
+    return was;
+  }
+
+  function updateMarker(dt) {
+    if (!marker.visible) return;
+    markT += dt;
+    if (markOut >= 0) {
+      markOut += dt;
+      const t = markOut / MARK_OUT;
+      if (t >= 1) { hideMarker(); return; }
+      const s = 1 + t * 0.35;              // opens out as it goes
+      marker.scale.set(s, 1, s);
+      marker.material.opacity = 0.62 * (1 - t);
+      return;
+    }
+    if (markT < MARK_IN) {
+      // drops in wide and settles, so the eye is pulled to where it landed
+      const e = 1 - (1 - markT / MARK_IN) * (1 - markT / MARK_IN);
+      const s = 1.7 - 0.7 * e;
+      marker.scale.set(s, 1, s);
+      marker.material.opacity = 0.62 * e;
+    } else {
+      marker.scale.set(1, 1, 1);
+      marker.material.opacity = 0.62 + Math.sin(markT * 3.2) * 0.08;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -345,6 +593,13 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     if (down('ArrowRight', 'Period')) turn -= 1;
     if (turn !== 0) yaw += turn * KEY_TURN * dt;
 
+    // A thumb parked on the pad without moving eventually means the stick, not
+    // a tap — reveal it so there is something to push against.
+    if (moveId !== null && !stickOn) {
+      holdT += dt;
+      if (holdT > STICK_HOLD) showStick(moveOx, moveOy);
+    }
+
     // desired direction in the camera's local frame
     let fwd = 0;
     let strafe = 0;
@@ -352,21 +607,53 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     if (down('KeyS', 'ArrowDown')) fwd -= 1;
     if (down('KeyD')) strafe += 1;
     if (down('KeyA')) strafe -= 1;
+
+    // Any deliberate steering takes the wheel back off a tapped destination.
+    const stickMag2 = joyX * joyX + joyY * joyY;
+    if (navOn && (fwd !== 0 || strafe !== 0 || turn !== 0 || stickMag2 > 0.02)) stopWalk();
+
     fwd += joyY;
     strafe += joyX;
 
-    // Yaw basis: rotating about +Y sends (0,0,-1) -> (-sin, 0, -cos) and
-    // (1,0,0) -> (cos, 0, -sin). Cheaper and steadier than reading the matrix.
-    const sy = Math.sin(yaw);
-    const cy = Math.cos(yaw);
-    _wish.set(-sy * fwd + cy * strafe, 0, -cy * fwd - sy * strafe);
-    const wl = Math.sqrt(_wish.x * _wish.x + _wish.z * _wish.z);
-    const moving = wl > 0.001;
-    if (wl > 1) { _wish.x /= wl; _wish.z /= wl; } // no diagonal speed bonus
+    let speed = TUNING.moveSpeed;
+    let moving;
 
-    const stickSprint = joyX * joyX + joyY * joyY > 0.85; // stick to the rim
-    const sprint = down('ShiftLeft', 'ShiftRight') || stickSprint;
-    const speed = TUNING.moveSpeed * (sprint ? TUNING.sprintMult : 1);
+    if (navOn) {
+      const dx = navX - posX;
+      const dz = navZ - posZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < NAV_ARRIVE) {
+        stopWalk();
+        _wish.set(0, 0, 0);
+        moving = false;
+      } else {
+        _wish.set(dx / dist, 0, dz / dist);
+        moving = true;
+        // Ease off over the last stride or so: arriving should be a stop, not a
+        // wall of damping applied at full tilt.
+        if (dist < NAV_SLOW) speed *= Math.max(0.25, dist / NAV_SLOW);
+        if (navFace) {
+          // Swing the view onto the bearing being walked — the Street View
+          // feel, where tapping something also brings it round in front of you.
+          const want = Math.atan2(-_wish.x, -_wish.z);
+          let off = want - yaw;
+          off = Math.atan2(Math.sin(off), Math.cos(off)); // shortest way round
+          yaw += off * (1 - Math.exp(-NAV_TURN * dt));
+        }
+      }
+    } else {
+      // Yaw basis: rotating about +Y sends (0,0,-1) -> (-sin, 0, -cos) and
+      // (1,0,0) -> (cos, 0, -sin). Cheaper and steadier than reading the matrix.
+      const sy = Math.sin(yaw);
+      const cy = Math.cos(yaw);
+      _wish.set(-sy * fwd + cy * strafe, 0, -cy * fwd - sy * strafe);
+      const wl = Math.sqrt(_wish.x * _wish.x + _wish.z * _wish.z);
+      moving = wl > 0.001;
+      if (wl > 1) { _wish.x /= wl; _wish.z /= wl; } // no diagonal speed bonus
+
+      const sprint = down('ShiftLeft', 'ShiftRight') || stickMag2 > 0.85; // stick to the rim
+      if (sprint) speed *= TUNING.sprintMult;
+    }
 
     // Accelerate toward the target while pushing, coast down when not. The
     // exponential form keeps the feel identical at 30fps and 240fps, unlike a
@@ -384,6 +671,16 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     // Head bob is driven by distance travelled, not by time, so it stays in step
     // with the feet when sprinting and freezes the moment the player stops.
     const spd = Math.sqrt(velX * velX + velZ * velZ);
+
+    // A straight line can be beaten by geometry — an alcove, the outside of a
+    // doorway. Sliding counts as progress; grinding in place does not, and
+    // after half a second of it the walk is quietly abandoned rather than left
+    // pressed into a wall forever.
+    if (navOn) {
+      navStall = spd < NAV_CRAWL ? navStall + dt : 0;
+      if (navStall > NAV_STALL) stopWalk();
+    }
+
     bobDist += spd * dt;
     const want = spd / TUNING.moveSpeed;
     bobBlend += ((want > 1 ? 1 : want) - bobBlend) * (1 - Math.exp(-BOB_FADE * dt));
@@ -392,6 +689,8 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     camera.position.set(posX, DIMS.eyeH + bob, posZ);
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
+
+    updateMarker(dt);
   }
 
   // ---------------------------------------------------------------------------
@@ -404,6 +703,8 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     velX = 0;
     velZ = 0;
     bobBlend = 0;
+    stopWalk();      // wherever you were walking to, you are not walking there
+    hideMarker();
     if (typeof newYaw === 'number') yaw = newYaw;
     resolveCollisions(); // never land inside a wall
     camera.position.set(posX, DIMS.eyeH, posZ);
@@ -434,6 +735,9 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
       stick = null;
       knob = null;
     }
+    if (marker.parent) marker.parent.remove(marker);
+    marker.geometry.dispose();
+    marker.material.dispose();
     held.clear();
   }
 
@@ -447,5 +751,14 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
     teleportTo,
     setEnabled,
     dispose,
+
+    // --- tap-to-walk. main.js decides what a tap *means* (an exhibit within
+    // reach is opened, anything else is walked to); this end owns the walking.
+    walkToScreen,
+    stopWalk,
+    consumeTap,
+    get isWalking() { return navOn; },
+    /** The destination ring. main.js parents it into the scene. */
+    marker,
   };
 }

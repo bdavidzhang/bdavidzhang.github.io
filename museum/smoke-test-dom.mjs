@@ -32,6 +32,8 @@ export function stubCanvas(w = 300, h = 150) {
     addEventListener() {}, removeEventListener() {},
     appendChild(c) { return c; },
     parentElement: null,
+    // the museum's canvas is fixed to the viewport, so the box is the screen
+    getBoundingClientRect: () => ({ x: 0, y: 0, left: 0, top: 0, right: w, bottom: h, width: w, height: h }),
   };
   ctx.canvas = el;
   return el;

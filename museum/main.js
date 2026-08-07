@@ -61,10 +61,16 @@ async function boot() {
     isMobile: engine.isMobile,
   });
 
+  // The ring a tapped destination stands on. It lives at the scene root rather
+  // than in a room group: it is chrome, it is visible only while someone is
+  // walking to it, and it must not blink out with the room it happens to be in.
+  engine.scene.add(controls.marker);
+
   // --- interaction: raycast forward, offer the nearest exhibit --------------
   const ray = new THREE.Raycaster();
   ray.far = TUNING.interactDist;
   const centre = new THREE.Vector2(0, 0);
+  const tapNdc = new THREE.Vector2();
   let focused = null;
 
   function pickFocus() {
@@ -74,6 +80,28 @@ async function boot() {
     for (const h of hits) {
       const ex = h.object.userData.exhibit;
       if (ex) return { exhibit: ex, object: h.object, distance: h.distance };
+    }
+    return null;
+  }
+
+  /**
+   * The exhibit under a point on the screen, or null. Same raycaster and so the
+   * same TUNING.interactDist reach as the centre-screen focus: tap a plate you
+   * could already read and you read it, tap one across the room and the tap
+   * falls through to walking you over to it.
+   */
+  function pickAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    tapNdc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -(((clientY - rect.top) / rect.height) * 2 - 1),
+    );
+    ray.setFromCamera(tapNdc, engine.camera);
+    const hits = ray.intersectObjects(exhibits.targets, false);
+    for (const h of hits) {
+      const ex = h.object.userData.exhibit;
+      if (ex) return ex;
     }
     return null;
   }
@@ -89,9 +117,8 @@ async function boot() {
    * which already renders `href` as a real target="_blank" anchor the visitor
    * can click themselves.
    */
-  function openFocused() {
-    if (!focused) return;
-    const ex = focused.exhibit;
+  function openExhibit(ex) {
+    if (!ex) return;
 
     if (ex.kind === 'link' && ex.href) {
       // mailto:/tel: hand off to an external handler; opening them in a tab
@@ -114,6 +141,10 @@ async function boot() {
     ui.openReader(ex);
   }
 
+  function openFocused() {
+    if (focused) openExhibit(focused.exhibit);
+  }
+
   ui.onActivate(openFocused);
   ui.onTeleport((roomIndex) => {
     controls.teleportTo(0, roomCenterZ(roomIndex) + DIMS.roomD * 0.32, Math.PI);
@@ -129,10 +160,24 @@ async function boot() {
     }
   });
 
-  canvas.addEventListener('click', () => {
+  canvas.addEventListener('click', (e) => {
     if (ui.isReaderOpen()) return;
+
+    if (engine.isMobile) {
+      // Only a real tap counts. The click a browser sends at the end of a
+      // look-drag or a shove on the walk pad is not a request to go anywhere.
+      if (!controls.consumeTap()) return;
+      // Tap something close enough to read and you read it; tap anywhere else
+      // and you walk there. Both halves of the screen, so the gesture does not
+      // depend on knowing where the invisible walk pad lives.
+      const ex = pickAt(e.clientX, e.clientY);
+      if (ex) openExhibit(ex);
+      else controls.walkToScreen(e.clientX, e.clientY);
+      return;
+    }
+
     if (controls.isLocked && focused) openFocused();
-    else if (!engine.isMobile) controls.lock();
+    else controls.lock();
   });
 
   // --- per-frame -------------------------------------------------------------

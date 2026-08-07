@@ -37,6 +37,8 @@ function stubCanvas(w = 300, h = 150) {
     toDataURL: () => 'data:,',
     addEventListener() {}, removeEventListener() {},
     appendChild(c) { return c; },
+    // the museum's canvas is fixed to the viewport, so the box is the screen
+    getBoundingClientRect: () => ({ x: 0, y: 0, left: 0, top: 0, right: w, bottom: h, width: w, height: h }),
   };
   ctx.canvas = el;
   return el;
@@ -241,12 +243,18 @@ try {
   const cam = new THREE.PerspectiveCamera();
   cam.rotation.order = 'YXZ';
   const colliders = world ? world.colliders : [{ minX: 1, maxX: 2, minZ: -2, maxZ: -1 }];
-  const c = mod.createControls({ camera: cam, domElement: stubCanvas(), colliders, isMobile: false });
+  // 300x150, the stub's default: taps below the vertical centre point at floor
+  const dom = stubCanvas();
+  const c = mod.createControls({ camera: cam, domElement: dom, colliders, isMobile: false });
   check('has the full API', () => {
-    for (const k of ['update', 'lock', 'unlock', 'teleportTo', 'setEnabled', 'dispose']) {
+    for (const k of ['update', 'lock', 'unlock', 'teleportTo', 'setEnabled', 'dispose',
+                     'walkToScreen', 'stopWalk', 'consumeTap']) {
       if (typeof c[k] !== 'function') return `missing ${k}()`;
     }
     if (typeof c.isLocked !== 'boolean') return 'isLocked is not a boolean';
+    if (typeof c.isWalking !== 'boolean') return 'isWalking is not a boolean';
+    if (!c.marker || !c.marker.isObject3D) return 'no destination marker to parent';
+    if (c.marker.visible) return 'the marker should start hidden';
     return null;
   });
   check('update() is stable over 120 frames', () => {
@@ -269,6 +277,89 @@ try {
       const d = Math.hypot(x - cx, z - cz);
       if (d < DIMS.bodyR - 0.05) return `inside a wall, penetration ${(DIMS.bodyR - d).toFixed(3)}m`;
     }
+    return null;
+  });
+
+  // --- tap-to-walk ----------------------------------------------------------
+  let tapped = null;
+  check('a tap on the floor walks the player to it', () => {
+    c.teleportTo(0, -5, 0);                    // room 0, facing down the enfilade
+    if (!c.walkToScreen(150, 112)) return 'the tap was refused';
+    if (!c.isWalking) return 'accepted the tap but is not walking';
+    if (!c.marker.visible) return 'no ring dropped on the destination';
+    tapped = { x: c.marker.position.x, z: c.marker.position.z };
+    if (!(tapped.z < -6)) return `destination z=${tapped.z.toFixed(2)}, expected further down the hall`;
+    for (let i = 0; i < 400 && c.isWalking; i++) c.update(1 / 60);
+    if (c.isWalking) return 'still walking after six seconds';
+    const d = Math.hypot(cam.position.x - tapped.x, cam.position.z - tapped.z);
+    return d < 0.75 ? null : `stopped ${d.toFixed(2)}m short of the tapped spot`;
+  });
+  check('the ring clears itself once the walk is over', () => {
+    for (let i = 0; i < 60; i++) c.update(1 / 60);
+    return c.marker.visible ? 'still standing on the floor a second later' : null;
+  });
+  check('tapping where you already stand is not a journey', () => {
+    // Needs a camera actually looking down: at eye level the steepest tap on
+    // screen still lands metres away, which is the honest reading of it.
+    const down = new THREE.PerspectiveCamera();
+    down.rotation.order = 'YXZ';
+    down.rotation.x = -1.45;
+    down.position.set(0, DIMS.eyeH, -5);
+    const dc = mod.createControls({ camera: down, domElement: stubCanvas(), colliders, isMobile: false });
+    try {
+      if (dc.walkToScreen(150, 75)) return 'accepted a destination inside arm’s reach';
+      return dc.isWalking ? 'started walking anyway' : null;
+    } finally {
+      dc.dispose();
+    }
+  });
+  check('a tap above the horizon stays inside the building', () => {
+    c.teleportTo(0, -20, 0);
+    c.walkToScreen(150, 4);                    // the ceiling: no floor under the ray
+    for (let i = 0; i < 400 && c.isWalking; i++) c.update(1 / 60);
+    const { x, z } = cam.position;
+    if (z > 0 || z < -DIMS.roomD * rooms.length) return `left the building at z=${z.toFixed(2)}`;
+    if (Math.abs(x) > DIMS.roomW / 2) return `left the building at x=${x.toFixed(2)}`;
+    return null;
+  });
+  check('a walk it cannot finish gives up instead of grinding', () => {
+    // Aim across the room and through the far wall, well off the doorway: the
+    // straight line has nowhere to slide to, and must not leave the visitor
+    // pressed into the plaster for the rest of the visit.
+    c.teleportTo(0, -20, 0);
+    if (!c.walkToScreen(10, 78)) return 'the tap was refused';
+    const goal = { x: c.marker.position.x, z: c.marker.position.z };
+    let frames = 0;
+    while (c.isWalking && frames < 900) { c.update(1 / 60); frames++; }
+    if (c.isWalking) return 'still shoving at the wall after fifteen seconds';
+    const short = Math.hypot(cam.position.x - goal.x, cam.position.z - goal.z);
+    // If this ever *arrives*, the test has stopped covering the blocked path.
+    if (short < 1) return `arrived after all (${short.toFixed(2)}m) — pick a target it cannot reach`;
+    const held = cam.position.z;
+    for (let i = 0; i < 60; i++) c.update(1 / 60);
+    return Math.abs(cam.position.z - held) > 0.2 ? 'still creeping after giving up' : null;
+  });
+  check('stopWalk() drops the destination', () => {
+    c.teleportTo(0, -5, 0);
+    c.walkToScreen(150, 112);
+    c.stopWalk();
+    if (c.isWalking) return 'still walking';
+    const z0 = cam.position.z;
+    for (let i = 0; i < 60; i++) c.update(1 / 60);
+    const drift = Math.abs(cam.position.z - z0);
+    return drift < 0.35 ? null : `drifted ${drift.toFixed(2)}m after being told to stop`;
+  });
+  check('a tap is spent by the first reader of it', () => {
+    if (c.consumeTap() !== false) return 'reported a tap that never happened';
+    return null;
+  });
+  check('a walk gives way to the reader', () => {
+    c.teleportTo(0, -5, 0);
+    c.walkToScreen(150, 112);
+    c.setEnabled(false);
+    if (c.isWalking) return 'still walking with input disabled';
+    if (c.marker.visible) return 'ring left standing behind the panel';
+    c.setEnabled(true);
     return null;
   });
   c.dispose();

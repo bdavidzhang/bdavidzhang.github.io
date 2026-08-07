@@ -58,10 +58,13 @@ const MODE_FACE = {
   night: { glyph: '☾', label: 'Night' },
 };
 
+// Tap first: it is the gesture a phone reaches for, and the one nothing on
+// screen advertises. The pad only exists once a thumb rests on the left half.
 const LEGEND_TOUCH = [
-  ['Stick', 'the pad at bottom-left walks you'],
+  ['Tap', 'walk to wherever you tap on the floor'],
+  ['Hold', 'the left half for a walking pad instead'],
   ['Drag', 'anywhere else to look around'],
-  ['Read', 'tap the button on an exhibit'],
+  ['Read', 'tap an exhibit up close, or its button'],
   ['Map', 'jump between rooms'],
 ];
 

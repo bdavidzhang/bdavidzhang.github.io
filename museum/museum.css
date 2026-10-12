@@ -877,6 +877,14 @@
   outline: none;
 }
 
+/* The panel takes focus only so the dialog is announced and Tab starts inside
+   it; it is not a control. Without this the blanket `.mus-root :focus-visible`
+   ring outranks the `outline: none` above and frames the whole panel whenever
+   it opens without a mouse click — E, Enter, or a /story arrival. */
+.mus-root .mus-reader-panel:focus-visible {
+  outline: none;
+}
+
 .mus-reader.is-open .mus-reader-panel {
   transform: none;
 }

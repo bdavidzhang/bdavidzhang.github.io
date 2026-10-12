@@ -28,7 +28,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DIMS, THEMES, themeFor, roomZRange, roomCenterZ } from './config.js';
+import { DIMS, THEMES, themeFor, roomZRange, roomCenterZ, wallCount } from './config.js';
 
 const EDGE_ANGLE = 15;        // matches drei's <Edges threshold={15}>
 const FACE_OFFSET = 0.02;     // anchors float this far proud of the wall face,
@@ -234,7 +234,7 @@ function rowPlan(maxCount, minRun) {
 function layoutAnchors(room, index, isLast) {
   const [zFar, zNear] = roomZRange(index);
   const halfW = DIMS.roomW / 2;
-  const exhibits = Array.isArray(room.exhibits) ? room.exhibits.length : 0;
+  const exhibits = wallCount(room);   // free-standing exhibits take no wall slot
   const need = Math.max(4, exhibits);
 
   const walls = isLast ? ['left', 'right', 'back'] : ['left', 'right'];

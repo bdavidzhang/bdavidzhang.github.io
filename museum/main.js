@@ -10,7 +10,16 @@ import { buildDecor } from './decor.js';
 import { createControls } from './controls.js';
 import { createUI } from './ui.js';
 import { createPortal } from './portal.js';
-import { ROOMS, TUNING, DIMS, roomCenterZ, roomIndexAtZ, themeFor } from './config.js';
+import { ROOMS, TUNING, DIMS, roomCenterZ, roomIndexAtZ, themeFor, standSpot } from './config.js';
+
+// --- arriving at a free-standing exhibit (`#story`, `#open-reality-story`) ----
+// The visitor is walked up to the lectern from a few metres out in front of it
+// and the reader opens on its own; closing it leaves them standing there, free to roam.
+const READ_DIST = 1.6;      // metres back from the lectern the visitor ends up
+const READ_PITCH = -0.26;   // looking down at the tilted label, radians
+const ARRIVE_HOLD = 0.45;   // seconds of stillness while the loader fades
+const ARRIVE_GLIDE = 2.0;   // seconds for the walk itself
+const ARRIVE_RUN = 4.0;     // metres of walk, where the room has that much to give
 
 const canvas = document.getElementById('scene');
 
@@ -51,7 +60,7 @@ async function boot() {
   });
 
   ui.setProgress(0.85, 'Calibrating');
-  // controls: { update(dt), lock(), unlock(), get isLocked, teleportTo(x,z,yaw), setEnabled(b), dispose() }
+  // controls: { update(dt), lock(), unlock(), get isLocked, teleportTo(x,z,yaw,pitch), setEnabled(b), dispose() }
   const controls = createControls({
     camera: engine.camera,
     domElement: canvas,
@@ -110,6 +119,10 @@ async function boot() {
       if (win) return;
     }
 
+    read(ex);
+  }
+
+  function read(ex) {
     controls.unlock();
     ui.openReader(ex);
   }
@@ -138,8 +151,30 @@ async function boot() {
   // --- per-frame -------------------------------------------------------------
   let lastRoomIdx = -1;
   let focusTimer = 0;
+  let arrival = null;       // { exhibit, x0, z0, x1, z1, yaw0, yaw1, t } while gliding in
+  let keepHash = false;     // an arrival's `#id` survives until the room changes
+
+  /** Advance the glide. Plain numbers only — this runs every frame. */
+  function stepArrival(dt) {
+    arrival.t += dt;
+    let k = (arrival.t - ARRIVE_HOLD) / ARRIVE_GLIDE;
+    k = k < 0 ? 0 : (k > 1 ? 1 : k);
+    const e = k * k * (3 - 2 * k);                  // smoothstep
+    controls.teleportTo(
+      arrival.x0 + (arrival.x1 - arrival.x0) * e,
+      arrival.z0 + (arrival.z1 - arrival.z0) * e,
+      arrival.yaw0 + (arrival.yaw1 - arrival.yaw0) * e,
+      READ_PITCH * e,
+    );
+    if (k < 1) return;
+    const { exhibit } = arrival;
+    arrival = null;
+    controls.setEnabled(true);
+    read(exhibit);
+  }
 
   engine.onFrame((dt, elapsed) => {
+    if (arrival) stepArrival(dt);
     controls.update(dt);
     decor.update(dt, elapsed);
     portal.update(dt, engine.camera.position);
@@ -160,19 +195,70 @@ async function boot() {
     if (idx !== lastRoomIdx) {
       lastRoomIdx = idx;
       ui.setRoom(idx, rooms[idx]);
-      location.replace(`#${ROOMS[idx].id}`);
+      if (keepHash) keepHash = false;
+      else location.replace(`#${ROOMS[idx].id}`);
     }
   });
 
-  // --- deep link: #roomId ----------------------------------------------------
+  // --- deep link: #roomId, or the #id of a free-standing exhibit --------------
   const wanted = ROOMS.findIndex((r) => `#${r.id}` === location.hash);
   if (wanted > 0) controls.teleportTo(0, roomCenterZ(wanted) + DIMS.roomD * 0.32, Math.PI);
+
+  let stand = null;
+  for (let i = 0; i < rooms.length && !stand; i++) {
+    const exhibit = rooms[i].exhibits.find((e) => e.stand && `#${e.id}` === location.hash);
+    if (exhibit) stand = { exhibit, room: i, spot: standSpot(i, exhibit.stand) };
+  }
+  if (stand) {
+    const { spot } = stand;
+    // The lectern faces (sin, cos) of its yaw; the visitor stands that way out
+    // from it. A camera with the same yaw looks straight back down that line.
+    const x1 = spot.x + Math.sin(spot.rotationY) * READ_DIST;
+    const z1 = spot.z + Math.cos(spot.rotationY) * READ_DIST;
+    // The reader panel covers the right of the screen, so looking straight at
+    // the lectern would hide it. Turn right by exactly enough to centre it in
+    // the strip the panel leaves. The width mirrors `.mus-reader-panel` in
+    // museum.css (min(44rem, 56vw), never under 23rem); on a narrow screen the
+    // panel takes everything and there is nothing to frame, so no turn.
+    const vw = innerWidth || 1;
+    const panel = Math.max(Math.min(704, vw * 0.56), Math.min(vw, 368));
+    const tanHalf = Math.tan((engine.camera.fov * Math.PI) / 360) * engine.camera.aspect;
+    const yaw1 = spot.rotationY - (panel < vw * 0.8 ? Math.atan((panel / vw) * tanHalf) : 0);
+    keepHash = true;
+    controls.setEnabled(false);       // the glide owns the camera until it lands
+    const still = typeof matchMedia === 'function' &&
+      matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (still) {
+      controls.teleportTo(x1, z1, yaw1, READ_PITCH);
+      arrival = { exhibit: stand.exhibit, x0: x1, z0: z1, x1, z1, yaw0: yaw1, yaw1, t: ARRIVE_HOLD + ARRIVE_GLIDE };
+    } else {
+      // Start straight out in front of the lectern, looking at it, and walk in.
+      // The run is cut short so the start stays inside this room and never
+      // nearer its entrance wall than the 1.8 m spawn line — in the atrium that
+      // wall is the Open Reality portal, and standing in its zone opens a tab.
+      const fx = Math.sin(spot.rotationY);
+      const fz = Math.cos(spot.rotationY);
+      const zNearLim = -stand.room * DIMS.roomD - 1.8;
+      const zFarLim = -(stand.room + 1) * DIMS.roomD + 1.0;
+      let run = ARRIVE_RUN;
+      if (fz > 1e-3) run = Math.min(run, (zNearLim - z1) / fz);
+      else if (fz < -1e-3) run = Math.min(run, (zFarLim - z1) / fz);
+      run = Math.max(0, run);
+      const x0 = x1 + fx * run;
+      const z0 = z1 + fz * run;
+      controls.teleportTo(x0, z0, spot.rotationY, 0);
+      arrival = { exhibit: stand.exhibit, x0, z0, x1, z1, yaw0: spot.rotationY, yaw1, t: 0 };
+    }
+  }
 
   ui.setProgress(1, 'Ready');
   engine.start();
   ui.hideLoader();
 
-  ui.onEnter(() => { if (!engine.isMobile) controls.lock(); });
+  // An arrival opens the reader by itself, so it skips the entry gate; pointer
+  // lock is taken later, on the gesture that closes the reader.
+  ui.onEnter(() => { if (!engine.isMobile && !arrival) controls.lock(); });
+  if (arrival) ui.enter();
 
   // expose for debugging / the perf overlay
   window.__museum = { engine, world, decor, exhibits, portal, controls, ui, rooms };

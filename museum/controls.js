@@ -398,13 +398,16 @@ export function createControls({ camera, domElement, colliders = [], isMobile = 
   // api
   // ---------------------------------------------------------------------------
 
-  function teleportTo(x, z, newYaw) {
+  function teleportTo(x, z, newYaw, newPitch) {
     posX = x;
     posZ = z;
     velX = 0;
     velZ = 0;
     bobBlend = 0;
     if (typeof newYaw === 'number') yaw = newYaw;
+    if (typeof newPitch === 'number') {
+      pitch = newPitch > PITCH_LIMIT ? PITCH_LIMIT : (newPitch < -PITCH_LIMIT ? -PITCH_LIMIT : newPitch);
+    }
     resolveCollisions(); // never land inside a wall
     camera.position.set(posX, DIMS.eyeH, posZ);
     camera.rotation.y = yaw;

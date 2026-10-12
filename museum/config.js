@@ -181,6 +181,31 @@ export function roomIndexAtZ(z) {
 }
 
 // ---------------------------------------------------------------------------
+// Free-standing exhibits. Most exhibits take a wall anchor from architecture.js;
+// one that carries `stand: { x, depth, rotationY }` is placed by hand instead and
+// gets a lectern out on the floor. `depth` is metres in from the room's entrance
+// wall, so a stand survives rooms being reordered. A stand's id doubles as its
+// deep link: `#<id>` walks the visitor up to it and opens it (see main.js).
+// ---------------------------------------------------------------------------
+
+/** How many of a room's exhibits hang on its walls, i.e. need an anchor. */
+export function wallCount(room) {
+  const list = room && Array.isArray(room.exhibits) ? room.exhibits : [];
+  let n = 0;
+  for (const e of list) if (e && !e.stand) n++;
+  return n;
+}
+
+/** World-space floor spot and facing of a stand in room `roomIndex`. */
+export function standSpot(roomIndex, stand) {
+  return {
+    x: Number(stand.x) || 0,
+    z: -roomIndex * DIMS.roomD - (Number(stand.depth) || 0),
+    rotationY: Number(stand.rotationY) || 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The rooms themselves. `source` names the key that content.js fills in.
 // ---------------------------------------------------------------------------
 

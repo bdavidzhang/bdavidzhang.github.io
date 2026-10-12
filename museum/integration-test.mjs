@@ -22,7 +22,7 @@ const { loadContent } = await import('./content.js');
 const { buildWorld } = await import('./architecture.js');
 const { buildExhibits } = await import('./exhibits.js');
 const { buildDecor } = await import('./decor.js');
-const { TUNING, DIMS } = await import('./config.js');
+const { TUNING, DIMS, wallCount } = await import('./config.js');
 
 const rooms = await loadContent();
 
@@ -144,7 +144,7 @@ rooms.forEach((room, i) => {
   if (!group) return;
   group.updateMatrixWorld(true);
 
-  const anchors = (world.anchors.get(room.id) || []).slice(0, room.exhibits.length);
+  const anchors = (world.anchors.get(room.id) || []).slice(0, wallCount(room));
   if (!anchors.length) return;
 
   // the volume a plate needs: its slot, plus 0.22m of clearance into the room

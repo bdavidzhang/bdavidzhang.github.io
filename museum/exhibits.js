@@ -17,7 +17,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PALETTE, CSS, DIMS, isDark, roomCenterZ } from './config.js';
+import { PALETTE, CSS, DIMS, isDark, roomCenterZ, standSpot } from './config.js';
 
 const BASE = new URL('../', import.meta.url); // site root — museum.html lives there
 
@@ -72,6 +72,12 @@ const LECT_HALF_W = 0.36;         // collider half-extents (along the wall / int
 const LECT_HALF_D = 0.30;
 const LECT_BTN_R = 0.05;
 
+// A free-standing lectern (`exhibit.stand`) is out on the open floor with no wall
+// behind it to say "exhibit", so it gets a thin lit ring around its foot.
+const RING_INNER = 0.64;
+const RING_OUTER = 0.675;
+const RING_Y = 0.062;             // just clear of the atrium's 0.05 m flagstones
+
 // Landscape label — a lectern is read at a glance and from above, so the card is
 // wider and carries far less text than a wall plate.
 const LINK_W = HI_RES ? 512 : 320;
@@ -86,6 +92,13 @@ const KIND_LABEL = {
   podcast: 'Episode',
   log: 'Logbook',
   link: 'Elsewhere',
+  story: 'Story',
+};
+
+// What pressing E on a lectern does, printed along its bottom edge.
+const LECTERN_CUE = {
+  link: 'PRESS E · OPENS IN A NEW TAB ↗',
+  story: 'PRESS E · READ THE STORY',
 };
 
 // ---------------------------------------------------------------------------
@@ -388,14 +401,21 @@ function drawLinkFace(canvas, exhibit, hue) {
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = CSS.inkSoft;
   ctx.font = `600 ${u(20)}px Inter, system-ui, sans-serif`;
-  const kind = (KIND_LABEL[exhibit.kind] || 'Elsewhere').toUpperCase();
+  const kind = (exhibit.label || KIND_LABEL[exhibit.kind] || 'Elsewhere').toUpperCase();
   ctx.letterSpacing = `${u(2.4)}px`;
   ctx.fillText(fitLine(ctx, kind, maxW), PAD, u(84));
   ctx.letterSpacing = '0px';
 
+  // one line, so a long title steps its size down before it is ever cut short
+  const title = exhibit.title || 'Untitled';
+  let size = 58;
   ctx.fillStyle = CSS.ink;
-  ctx.font = `600 ${u(58)}px Inter, system-ui, sans-serif`;
-  ctx.fillText(fitLine(ctx, exhibit.title || 'Untitled', maxW), PAD, u(160));
+  ctx.font = `600 ${u(size)}px Inter, system-ui, sans-serif`;
+  while (size > 36 && ctx.measureText(title).width > maxW) {
+    size -= 2;
+    ctx.font = `600 ${u(size)}px Inter, system-ui, sans-serif`;
+  }
+  ctx.fillText(fitLine(ctx, title, maxW), PAD, u(160));
 
   if (exhibit.meta) {
     ctx.fillStyle = CSS.inkSoft;
@@ -413,7 +433,7 @@ function drawLinkFace(canvas, exhibit, hue) {
   ctx.fillStyle = accent;
   ctx.font = `600 ${u(21)}px Inter, system-ui, sans-serif`;
   ctx.letterSpacing = `${u(1.8)}px`;
-  ctx.fillText(fitLine(ctx, 'PRESS E · OPENS IN A NEW TAB ↗', maxW), PAD, u(280));
+  ctx.fillText(fitLine(ctx, LECTERN_CUE[exhibit.kind] || LECTERN_CUE.link, maxW), PAD, u(280));
   ctx.letterSpacing = '0px';
 }
 
@@ -533,6 +553,7 @@ export function buildExhibits(rooms, world) {
     .rotateX(Math.PI / 2);          // lies flat against the column's front face
   const bodyMat = new THREE.MeshLambertMaterial({ color: PALETTE.frame, emissive: 0x000000 });
   const buttonRest = new THREE.MeshLambertMaterial({ color: PALETTE.rail, emissive: 0x000000 });
+  let ringGeo = null;               // lazy — only free-standing lecterns have one
 
   const textures = new Set();
   const materials = new Set([frameRest, bodyMat, buttonRest]);
@@ -694,7 +715,8 @@ export function buildExhibits(rooms, world) {
 
   // --- one lectern -----------------------------------------------------------
 
-  function buildLectern(exhibit, anchor, hue, parent) {
+  /** `spot` is where the lectern stands: { x, z, rotationY }, facing +Z rotated. */
+  function buildLectern(exhibit, spot, hue, parent, ringed) {
     const canvas = makeCanvas(LINK_W, LINK_H);
     drawLinkFace(canvas, exhibit, hue);
     const cardTex = tuneTexture(new THREE.CanvasTexture(canvas));
@@ -734,11 +756,21 @@ export function buildExhibits(rooms, world) {
 
     lift.add(body, face, button);
 
-    // stand it in front of the anchor rather than on it
-    _fwd.set(Math.sin(anchor.rotationY || 0), 0, Math.cos(anchor.rotationY || 0));
-    _spot.copy(anchor.position).addScaledVector(_fwd, LECT_OFFSET);
-    _spot.y = 0;
-    placeInParent(parent, pivot, _spot, anchor.rotationY);
+    if (ringed) {
+      if (!ringGeo) ringGeo = new THREE.RingGeometry(RING_INNER, RING_OUTER, 48).rotateX(-Math.PI / 2);
+      // unlit, so it reads as light on the floor in day and night alike
+      const ringMat = new THREE.MeshBasicMaterial({ color: accentCss(hue) });
+      materials.add(ringMat);
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.y = RING_Y;
+      ring.matrixAutoUpdate = false;
+      ring.updateMatrix();
+      pivot.add(ring);                // on the pivot, not the lift: it stays on the floor
+    }
+
+    _fwd.set(Math.sin(spot.rotationY || 0), 0, Math.cos(spot.rotationY || 0));
+    _spot.set(spot.x, 0, spot.z);
+    placeInParent(parent, pivot, _spot, spot.rotationY);
 
     // world-space AABB, correct for any yaw rather than just the axis-aligned walls
     const ax = Math.abs(_fwd.x);
@@ -788,14 +820,30 @@ export function buildExhibits(rooms, world) {
       console.warn(`[museum] no anchors for room "${room.id}", using fallback placement`);
     }
 
+    let slot = 0;                   // wall anchors are dealt only to wall exhibits
     for (let k = 0; k < exhibits.length; k++) {
       const exhibit = exhibits[k];
       if (!exhibit) continue;
-      const anchor = (anchors && anchors[k]) || fallbackAnchor(i, k);
+      // placed by hand, out on the floor — takes no anchor
+      if (exhibit.stand) {
+        buildLectern(exhibit, standSpot(i, exhibit.stand), room.accentHue, parent, true);
+        continue;
+      }
+      const anchor = (anchors && anchors[slot]) || fallbackAnchor(i, slot);
+      slot++;
       // links are somewhere to go, not something to read — they stand up off the
       // floor as a pressable lectern instead of hanging on the wall
-      if (exhibit.kind === 'link') buildLectern(exhibit, anchor, room.accentHue, parent);
-      else buildPlate(exhibit, anchor, room.accentHue, parent);
+      if (exhibit.kind === 'link') {
+        // in front of the anchor rather than on it
+        const ry = anchor.rotationY || 0;
+        buildLectern(exhibit, {
+          x: anchor.position.x + Math.sin(ry) * LECT_OFFSET,
+          z: anchor.position.z + Math.cos(ry) * LECT_OFFSET,
+          rotationY: ry,
+        }, room.accentHue, parent, false);
+      } else {
+        buildPlate(exhibit, anchor, room.accentHue, parent);
+      }
     }
   }
 
@@ -892,6 +940,7 @@ export function buildExhibits(rooms, world) {
     frameGeo.dispose();
     faceGeo.dispose();
     buttonGeo.dispose();
+    if (ringGeo) { ringGeo.dispose(); ringGeo = null; }
     if (lecternBodyGeo) { lecternBodyGeo.dispose(); lecternBodyGeo = null; }
     textures.clear();
     materials.clear();

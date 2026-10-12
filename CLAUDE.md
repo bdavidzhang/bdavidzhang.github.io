@@ -20,6 +20,8 @@ Deployed via GitHub Pages at `bdavidzhang.github.io`.
 ├── home.html            # The text site (profile, bio, all content previews).
 │                        #   Was index.html; the museum took the root.
 ├── museum.html          # Redirect stub → / , so links shared before the swap survive
+├── story.html           # /story — redirect stub → /#story, the personal-story lectern
+├── open-reality-story.html  # /open-reality-story — stub → /#open-reality-story (founder story)
 ├── writing.html         # Essays listing with tag filter
 ├── essay.html           # Single essay viewer (?slug=...)
 ├── math.html            # Math notes listing
@@ -210,6 +212,35 @@ Note `window.open(url, '_blank', 'noopener')` returns `null` **even on success**
 spec severs the WindowProxy), so it is impossible to distinguish "opened" from
 "blocked". Both `portal.js` and `main.js` therefore call `window.open(url, '_blank')`
 and set `opened.opener = null` on the next statement instead. Do not "fix" this back.
+
+**Free-standing exhibits and `/story`.** An exhibit carrying
+`stand: { x, depth, rotationY }` takes no wall anchor: `exhibits.js` gives it a ringed
+lectern on the open floor at `standSpot()` (`config.js`; `depth` is metres in from the
+room's entrance wall). Anything that counts anchors must use `wallCount(room)`, not
+`room.exhibits.length` — `architecture.js`, `decor.js` and the integration test all do —
+or a stand reflows the wall plates. A stand is still an ordinary exhibit and raycast
+target, so the one-target-per-exhibit assertions hold.
+
+A stand's `id` is its deep link, and there are two, both in the atrium (`content.js`):
+the personal story (id `story`, beside the path; `story.html` → `/#story`) and the
+founder story (id `open-reality-story`, beside the Open Reality wall;
+`open-reality-story.html` → `/#open-reality-story`). On such a hash `main.js` skips the
+entry gate (`ui.enter()`), disables the controls, glides the camera in from up to 4 m
+out in front of the lectern, then opens the reader. Closing it leaves the visitor there,
+free to walk. The landing yaw is turned right so the lectern sits in the strip the
+reader panel leaves visible — that maths mirrors `.mus-reader-panel`'s width in
+`museum.css`; change one, change the other. `prefers-reduced-motion` skips the glide.
+The hash is kept until the visitor changes room.
+
+**A stand near the portal must keep the whole arrival outside the trigger zone.** The
+founder-story lectern, the spot the visitor lands on (1.6 m out from it) and the glide's
+start are all outside `|x| ≤ 1.96, z ≥ -1.15`; `main.js` also clamps every glide start
+to the 1.8 m spawn line. Move the stand carelessly and `/open-reality-story` opens
+open-reality.io on its own.
+
+The texts are the Story sections of `personal-story.md` and `story.md` only. Those files
+are untracked on purpose: their headers and "open items" notes are private, and
+committing them would publish them at `/story.md` and `/personal-story.md`.
 
 **The portrait easter egg.** An exhibit may carry `imageAlt` alongside `image`;
 `exhibits.js` shows it only while that plate is focused, so staring at the portrait in

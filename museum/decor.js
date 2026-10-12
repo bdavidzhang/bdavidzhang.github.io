@@ -15,7 +15,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DIMS, roomZRange, themeFor } from './config.js';
+import { DIMS, roomZRange, themeFor, wallCount } from './config.js';
 
 import { garden } from './themes/garden.js';
 import { study } from './themes/study.js';
@@ -124,7 +124,7 @@ export function buildDecor(rooms, world) {
       // Where this room's exhibit plates actually land, so a theme can place
       // shelving and panels around them instead of hardcoding coordinates that
       // silently go stale the moment an essay is added.
-      anchors: (world.anchors.get(room.id) || []).slice(0, room.exhibits ? room.exhibits.length : 0),
+      anchors: (world.anchors.get(room.id) || []).slice(0, wallCount(room)),
 
       mat,
       glowMat,

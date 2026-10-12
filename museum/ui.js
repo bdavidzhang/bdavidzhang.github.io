@@ -39,6 +39,7 @@ const KIND_LABEL = {
   podcast: 'Episode',
   log: 'Logbook',
   link: 'Elsewhere',
+  story: 'Story',
 };
 
 const LEGEND_DESKTOP = [
@@ -978,6 +979,10 @@ export function createUI({ isMobile = false } = {}) {
   return {
     setProgress,
     hideLoader,
+    // Skip the entry gate. Only for arrivals that open a DOM panel straight away
+    // (a `#story` deep link) — nothing here can take pointer lock, since there
+    // has been no gesture.
+    enter: enterMuseum,
     setFocus,
     setRoom,
     openReader,
